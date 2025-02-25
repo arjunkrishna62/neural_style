@@ -8,6 +8,7 @@ from transformers import AutoTokenizer, CLIPTextModel
 from diffusers import AutoencoderKL, UNet2DConditionModel
 from diffusers.utils.peft_utils import set_weights_and_activate_adapters
 from peft import LoraConfig
+
 p = "src/"
 sys.path.append(p)
 from model import make_1step_sched, my_vae_encoder_fwd, my_vae_decoder_fwd
@@ -29,20 +30,27 @@ class TwinConv(torch.nn.Module):
 class Pix2Pix_Turbo(torch.nn.Module):
     def __init__(self, pretrained_name=None, pretrained_path=None, ckpt_folder="checkpoints", lora_rank_unet=8, lora_rank_vae=4):
         super().__init__()
+        # Automatically detect if CUDA is available, else fallback to CPU
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.tokenizer = AutoTokenizer.from_pretrained("stabilityai/sd-turbo", subfolder="tokenizer")
-        self.text_encoder = CLIPTextModel.from_pretrained("stabilityai/sd-turbo", subfolder="text_encoder").cuda()
-        self.sched = make_1step_sched()
+        self.text_encoder = CLIPTextModel.from_pretrained("stabilityai/sd-turbo", subfolder="text_encoder").to(self.device)
+
+        self.sched = make_1step_sched(self.device)
 
         vae = AutoencoderKL.from_pretrained("stabilityai/sd-turbo", subfolder="vae")
         vae.encoder.forward = my_vae_encoder_fwd.__get__(vae.encoder, vae.encoder.__class__)
         vae.decoder.forward = my_vae_decoder_fwd.__get__(vae.decoder, vae.decoder.__class__)
-        # add the skip connection convs
-        vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
-        vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).cuda()
+
+        # Move skip connection layers to device
+        vae.decoder.skip_conv_1 = torch.nn.Conv2d(512, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).to(self.device)
+        vae.decoder.skip_conv_2 = torch.nn.Conv2d(256, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).to(self.device)
+        vae.decoder.skip_conv_3 = torch.nn.Conv2d(128, 512, kernel_size=(1, 1), stride=(1, 1), bias=False).to(self.device)
+        vae.decoder.skip_conv_4 = torch.nn.Conv2d(128, 256, kernel_size=(1, 1), stride=(1, 1), bias=False).to(self.device)
+
         vae.decoder.ignore_skip = False
-        unet = UNet2DConditionModel.from_pretrained("stabilityai/sd-turbo", subfolder="unet")
+
+        unet = UNet2DConditionModel.from_pretrained("stabilityai/sd-turbo", subfolder="unet").to(self.device)
 
         if pretrained_name == "edge_to_image":
             url = "https://www.cs.cmu.edu/~img2img-turbo/models/edge_to_image_loras.pkl"
@@ -78,7 +86,6 @@ class Pix2Pix_Turbo(torch.nn.Module):
             unet.load_state_dict(_sd_unet)
 
         elif pretrained_name == "sketch_to_image_stochastic":
-            # download from url
             url = "https://www.cs.cmu.edu/~img2img-turbo/models/sketch_to_image_stochastic_lora.pkl"
             os.makedirs(ckpt_folder, exist_ok=True)
             outf = os.path.join(ckpt_folder, "sketch_to_image_stochastic_lora.pkl")
@@ -134,32 +141,32 @@ class Pix2Pix_Turbo(torch.nn.Module):
             torch.nn.init.constant_(vae.decoder.skip_conv_2.weight, 1e-5)
             torch.nn.init.constant_(vae.decoder.skip_conv_3.weight, 1e-5)
             torch.nn.init.constant_(vae.decoder.skip_conv_4.weight, 1e-5)
-            target_modules_vae = ["conv1", "conv2", "conv_in", "conv_shortcut", "conv", "conv_out",
+            target_modules_vae = [
+                "conv1", "conv2", "conv_in", "conv_shortcut", "conv", "conv_out",
                 "skip_conv_1", "skip_conv_2", "skip_conv_3", "skip_conv_4",
                 "to_k", "to_q", "to_v", "to_out.0",
             ]
             vae_lora_config = LoraConfig(r=lora_rank_vae, init_lora_weights="gaussian",
-                target_modules=target_modules_vae)
+                                         target_modules=target_modules_vae)
             vae.add_adapter(vae_lora_config, adapter_name="vae_skip")
             target_modules_unet = [
                 "to_k", "to_q", "to_v", "to_out.0", "conv", "conv1", "conv2", "conv_shortcut", "conv_out",
                 "proj_in", "proj_out", "ff.net.2", "ff.net.0.proj"
             ]
             unet_lora_config = LoraConfig(r=lora_rank_unet, init_lora_weights="gaussian",
-                target_modules=target_modules_unet
-            )
+                                          target_modules=target_modules_unet)
             unet.add_adapter(unet_lora_config)
             self.lora_rank_unet = lora_rank_unet
             self.lora_rank_vae = lora_rank_vae
             self.target_modules_vae = target_modules_vae
             self.target_modules_unet = target_modules_unet
 
-        # unet.enable_xformers_memory_efficient_attention()
-        unet.to("cuda")
-        vae.to("cuda")
+        # Move final models to the detected device
+        unet = unet.to(self.device)
+        vae = vae.to(self.device)
         self.unet, self.vae = unet, vae
         self.vae.decoder.gamma = 1
-        self.timesteps = torch.tensor([999], device="cuda").long()
+        self.timesteps = torch.tensor([999], device=self.device).long()
         self.text_encoder.requires_grad_(False)
 
     def set_eval(self):
@@ -188,15 +195,21 @@ class Pix2Pix_Turbo(torch.nn.Module):
         assert (prompt is None) != (prompt_tokens is None), "Either prompt or prompt_tokens should be provided"
 
         if prompt is not None:
-            # encode the text prompt
-            caption_tokens = self.tokenizer(prompt, max_length=self.tokenizer.model_max_length,
-                                            padding="max_length", truncation=True, return_tensors="pt").input_ids.cuda()
+            # encode the text prompt and move tokens to the detected device
+            caption_tokens = self.tokenizer(
+                prompt,
+                max_length=self.tokenizer.model_max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt"
+            ).input_ids.to(self.device)
             caption_enc = self.text_encoder(caption_tokens)[0]
         else:
             caption_enc = self.text_encoder(prompt_tokens)[0]
+
         if deterministic:
             encoded_control = self.vae.encode(c_t).latent_dist.sample() * self.vae.config.scaling_factor
-            model_pred = self.unet(encoded_control, self.timesteps, encoder_hidden_states=caption_enc,).sample
+            model_pred = self.unet(encoded_control, self.timesteps, encoder_hidden_states=caption_enc).sample
             x_denoised = self.sched.step(model_pred, self.timesteps, encoded_control, return_dict=True).prev_sample
             x_denoised = x_denoised.to(model_pred.dtype)
             self.vae.decoder.incoming_skip_acts = self.vae.encoder.current_down_blocks
@@ -209,7 +222,7 @@ class Pix2Pix_Turbo(torch.nn.Module):
             # combine the input and noise
             unet_input = encoded_control * r + noise_map * (1 - r)
             self.unet.conv_in.r = r
-            unet_output = self.unet(unet_input, self.timesteps, encoder_hidden_states=caption_enc,).sample
+            unet_output = self.unet(unet_input, self.timesteps, encoder_hidden_states=caption_enc).sample
             self.unet.conv_in.r = None
             x_denoised = self.sched.step(unet_output, self.timesteps, unet_input, return_dict=True).prev_sample
             x_denoised = x_denoised.to(unet_output.dtype)

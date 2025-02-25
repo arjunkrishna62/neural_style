@@ -15,7 +15,7 @@ from main import neural_style_transfer
 # Import the Pixel2Turbo model
 p = "src/"
 sys.path.append(p)
-from pixel2turbo import Pix2Pix_Turbo
+from src.pixel2turbo import Pix2Pix_Turbo
 
 @st.cache_data
 def prepare_imgs(content_im, style_im, RGB=False):
@@ -27,7 +27,7 @@ def prepare_imgs(content_im, style_im, RGB=False):
         ratio = 512./h
     if (w > 512) and (w>h):
         ratio = 512./w
-    content_im = cv2.resize(content_im, dsize=None, fx=ratio, fy=ratio, 
+    content_im = cv2.resize(content_im, dsize=None, fx=ratio, fy=ratio,
                             interpolation=cv2.INTER_CUBIC)        
     # reshape style_im to match the content_im shape 
     # (method followed in Gatys et al. paper):
@@ -252,8 +252,8 @@ if __name__ == "__main__":
             im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
             
             # Show images:
-            imc_ph.image(im_c, use_column_width=True)
-            ims_ph.image(im_s, use_column_width=True) 
+            imc_ph.image(im_c, use_contianer_width=True)
+            ims_ph.image(im_s, use_container_width=True) 
         
         st.markdown("""
                     ### When ready, START the image generation!
