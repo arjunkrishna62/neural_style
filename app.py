@@ -19,7 +19,10 @@ from src.pixel2turbo import Pix2Pix_Turbo
 
 @st.cache_data
 def prepare_imgs(content_im, style_im, RGB=False):
-    """ Return scaled RGB images as numpy array of type np.uint8 """    
+    """ Return scaled RGB images as numpy array of type np.uint8 """ 
+    if content_im is None or style_im is None:
+        st.error("One or both input images are invalid")
+        return None, None   
     # check sizes in order to avoid huge computation times:
     h,w,c = content_im.shape
     ratio = 1.
@@ -30,7 +33,6 @@ def prepare_imgs(content_im, style_im, RGB=False):
     content_im = cv2.resize(content_im, dsize=None, fx=ratio, fy=ratio,
                             interpolation=cv2.INTER_CUBIC)        
     # reshape style_im to match the content_im shape 
-    # (method followed in Gatys et al. paper):
     style_im = cv2.resize(style_im, content_im.shape[1::-1], cv2.INTER_CUBIC)
     
     # pass from BGR (OpenCV) to RGB:
@@ -87,10 +89,14 @@ def print_info_NST():
                 Let's have a look to an
                 example (left column, top and bottom, are the *content*
                 and *style*, respectively.):""")
-
+    
     # Show exemplar images:
-    root_content = os.path.join('data', 'content-images', 'lion.jpg')
-    root_style = os.path.join('data', 'style-images', 'wave.jpg')
+    root_content = os.path.join('data', 'content-images', 'picasso.jpg')
+    root_style = os.path.join('data', 'style-images', '2reIEHS.jpg')
+    
+    # root_content = os.path.join(current_dir, "/Users/arjunkrisha/Desktop/neural_style/nst-project/picasso.jpg")
+    # root_style = os.path.join(current_dir, "/Users/arjunkrisha/Desktop/neural_style/nst-project/2reIEHS.jpg")
+    
     
     content_im = cv2.imread(root_content)
     style_im = cv2.imread(root_style)    
@@ -163,38 +169,40 @@ def print_info_pixel2turbo():
 
 if __name__ == "__main__":
     
-    # app title and sidebar:
-    st.title('Image Style Transfer App')
-
-    # Select what to do:
-    st.sidebar.title('Configuration')
-    st.sidebar.subheader('Select what page to show')
-    options = ['About NST', 'Run NST on pair of images', 'About Pixel2Turbo', 'Run Pixel2Turbo']
-    app_mode = st.sidebar.selectbox('Select what to do/ show:',
-                                    options
-                                    )
     
-    # Set parameters for NST
-    if app_mode in ['About NST', 'Run NST on pair of images']:
-        # Set parameters to tune at the sidebar:
-        st.sidebar.title('NST Parameters')
-        #Weights of the loss function
-        st.sidebar.subheader('Weights')
+    st.title('Optimized Neural Styel Transfer')
+
+    
+    st.sidebar.title('Configuration')
+    with st.sidebar:
+        with st.expander("⚙️ Settings", expanded=True):
+            options = ['About NST', 'Try NST', 'About Pixel2Turbo', 'Run Pixel2Turbo']
+            app_mode = st.selectbox('Mode:', options)
+            st.info(f"Selected: {app_mode}")
+    
+    
+    if app_mode in ['Try NST']:
+        
+        st.sidebar.title('Parameters')
+        
+        st.sidebar.subheader("Weights",
+                             help="Higher values preserve content structure better")
         step=1e-1
         cweight = st.sidebar.number_input("Content", value=1e-3, step=step, format="%.5f")
         sweight = st.sidebar.number_input("Style", value=1e-1, step=step, format="%.5f")
         vweight = st.sidebar.number_input("Variation", value=0.0, step=step, format="%.5f")
-        # number of iterations
+       
         st.sidebar.subheader('Number of iterations')
         niter = st.sidebar.number_input('Iterations', min_value=1, max_value=1000, value=20, step=1)
-        # save or not the image:
+       
         st.sidebar.subheader('Save or not the stylized image')
         save_flag = st.sidebar.checkbox('Save result')
+
+            
     
-    # Set parameters for Pixel2Turbo
-    elif app_mode in ['About Pixel2Turbo', 'Run Pixel2Turbo']:
+   
+    elif app_mode in ['About Pixel2Turbo', 'Try Pixel2Turbo']:
         st.sidebar.title('Pixel2Turbo Parameters')
-        # Model type selection
         st.sidebar.subheader('Model Type')
         model_type = st.sidebar.selectbox(
             'Select model type:',
@@ -252,7 +260,7 @@ if __name__ == "__main__":
             im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
             
             # Show images:
-            imc_ph.image(im_c, use_contianer_width=True)
+            imc_ph.image(im_c, use_container_width=True)
             ims_ph.image(im_s, use_container_width=True) 
         
         st.markdown("""
@@ -304,7 +312,7 @@ if __name__ == "__main__":
         print_info_pixel2turbo()
         
     elif app_mode == options[3]:  # Run Pixel2Turbo
-        st.markdown("### Upload an image to transform with Pixel2Turbo")
+        st.markdown("")
         
         # File uploader for the input image
         im_types = ["png", "jpg", "jpeg"]
