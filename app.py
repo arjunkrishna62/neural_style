@@ -5,12 +5,17 @@ import numpy as np
 import cv2
 from PIL import Image
 import sys
-
+from dotenv import load_dotenv
+from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
 import io
 
 
 from main import neural_style_transfer
+from text_to_image import TextToImageGenerator
+from src.pixel2turbo import Pix2Pix_Turbo
+
+load_dotenv()
 
 # Import the Pixel2Turbo model
 p = "src/"
@@ -41,6 +46,16 @@ def prepare_imgs(content_im, style_im, RGB=False):
         style_im   = cv2.cvtColor(style_im, cv2.COLOR_BGR2RGB)
     
     return content_im, style_im
+
+@st.cache_resource
+def initialize_text2img_generator():
+    """Initialize the Text-to-Image generator with API keys from environment variables"""
+    api_keys = {
+        'stability': os.getenv('STABILITY_API_KEY'),
+        'openai': os.getenv('OPENAI_API_KEY')
+    }
+    return TextToImageGenerator(api_keys)
+
 
 @st.cache_resource
 def load_pixel2turbo_model(model_type):
@@ -77,7 +92,46 @@ def process_pixel2turbo(model, input_image, prompt, randomness=0.0):
     output_image = ((output_image + 1.0) * 127.5).astype(np.uint8)
     
     return output_image
+
+def display_generated_images(images, container):
+    """Display generated images in the provided container."""
+    # Create columns based on number of images
+    if len(images) > 2:
+        # For 3 or 4 images, use a 2x2 grid
+        rows = [container.columns(2) for _ in range(2)]
+        cols = [col for row in rows for col in row]
+    else:
+        # For 1 or 2 images, use a single row
+        cols = container.columns(len(images))
     
+    # Display each image with a download button
+    for i, (col, image) in enumerate(zip(cols, images)):
+        with col:
+            st.image(image, caption=f"Generated Image {i+1}", use_column_width=True)
+            
+            # Convert numpy array to bytes for download
+            pil_image = Image.fromarray(image)
+            buf = io.BytesIO()
+            pil_image.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            
+            # Add download button
+            st.download_button(
+                label="Download",
+                data=byte_im,
+                file_name=f"generated_image_{i+1}.png",
+                mime="image/png",
+                use_container_width=True
+            )
+            
+            # Save image if option is selected
+            if 'save_txt2img_flag' in locals() and save_txt2img_flag:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"txt2img_generated_{timestamp}_{i+1}.png"
+                pil_image.save(filename)
+                st.success(f"Image saved as {filename}")
+
+
 def print_info_NST():
     """ Print basic information about Neural Style Transfer within the app.
     """    
@@ -167,26 +221,110 @@ def print_info_pixel2turbo():
     # You'd need example images for Pixel2Turbo - this is just placeholder text
     st.info("Upload an image and try Pixel2Turbo to see the results!")
 
+def print_info_txt2img():
+    """Print basic information about Text-to-Image generation within the app."""
+    st.markdown("""
+                ## What is Text-to-Image Generation?
+                **Text-to-Image** generation is a deep learning technique that creates images from textual descriptions.
+                The model interprets your text prompt and generates visual content that matches your description.
+                
+                Our application supports two primary AI models:
+                - **Stable Diffusion**: An open-source model known for its creative flexibility and detail
+                - **DALL-E**: OpenAI's powerful text-to-image model with strong capabilities for realistic imagery
+                
+                Unlike Neural Style Transfer or Pixel2Turbo which require input images, text-to-image generation
+                creates completely new images based solely on your text description.
+                """)
+                
+    # Example prompts and images
+    st.markdown("""
+                ### Example Prompts:
+                - "A serene mountain lake at sunset with reflections of pine trees"
+                - "A futuristic cityscape with flying cars and neon lights"
+                - "A photorealistic portrait of a fantasy creature with detailed features"
+                - "An impressionist painting of a flower garden in spring"
+                """)
+                
+    st.info("Enter a detailed prompt to generate an image!")
+    
+
 if __name__ == "__main__":
     
     
     st.title('Optimized Neural Styel Transfer')
-
     
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST', 'About Pixel2Turbo', 'Run Pixel2Turbo']
+            options = ['About NST', 'Try NST', 'About Pixel2Turbo', 'Run Pixel2Turbo', 
+                      'About Text-to-Image', 'Generate from Text']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
     
-    
-    if app_mode in ['Try NST']:
+    # Text-to-Image parameters
+    if app_mode in ['Generate from Text']:
+        st.sidebar.title('Text-to-Image Parameters')
         
+        # Initialize generator
+        generator = initialize_text2img_generator()
+        
+        # Model selection
+        st.sidebar.subheader('Model')
+        model_option = st.sidebar.selectbox(
+            'Select AI Model:',
+            generator.get_available_models()
+        )
+        
+        # Image size selection
+        st.sidebar.subheader('Image Size')
+        size_option = st.sidebar.selectbox(
+            'Select image size:',
+            generator.get_available_sizes(model_option)
+        )
+        
+        # Number of images
+        st.sidebar.subheader('Generation Options')
+        num_images = st.sidebar.slider(
+            'Number of images:',
+            min_value=1,
+            max_value=4,
+            value=1
+        )
+        
+        # Advanced options in expander
+        with st.sidebar.expander("Advanced Settings", expanded=False):
+            guidance_scale = st.slider(
+                "Guidance Scale:",
+                min_value=1.0,
+                max_value=20.0,
+                value=7.5,
+                step=0.5,
+                help="Higher values increase adherence to the prompt. Lower values allow more creativity."
+            )
+            
+            steps = st.slider(
+                "Generation Steps:",
+                min_value=20,
+                max_value=150,
+                value=50,
+                help="More steps generally result in higher quality but take longer."
+            )
+            
+            use_random_seed = st.checkbox("Use Random Seed", True)
+            if not use_random_seed:
+                seed = st.number_input("Seed:", 0, 9999999, 42)
+            else:
+                seed = None
+        
+        # Save option
+        st.sidebar.subheader('Save Options')
+        save_txt2img_flag = st.sidebar.checkbox('Save generated images')
+    
+    elif app_mode in ['Try NST']:
         st.sidebar.title('Parameters')
         
         st.sidebar.subheader("Weights",
-                             help="Higher values preserve content structure better")
+                         help="Higher values preserve content structure better")
         step=1e-1
         cweight = st.sidebar.number_input("Content", value=1e-3, step=step, format="%.5f")
         sweight = st.sidebar.number_input("Style", value=1e-1, step=step, format="%.5f")
@@ -197,10 +335,7 @@ if __name__ == "__main__":
        
         st.sidebar.subheader('Save or not the stylized image')
         save_flag = st.sidebar.checkbox('Save result')
-
             
-    
-   
     elif app_mode in ['About Pixel2Turbo', 'Try Pixel2Turbo']:
         st.sidebar.title('Pixel2Turbo Parameters')
         st.sidebar.subheader('Model Type')
@@ -365,3 +500,90 @@ if __name__ == "__main__":
             
         else:
             st.info("Please upload an image to begin")
+    elif app_mode == options[4]:  # About Text-to-Image
+        print_info_txt2img()
+        
+    elif app_mode == options[5]:  # Generate from Text
+        st.markdown("### Generate Images from Text Prompts")
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            # Text prompt input
+            st.subheader("Enter Your Prompt")
+            
+            prompt = st.text_area(
+                "Describe the image you want to generate:",
+                height=100,
+                placeholder="A serene landscape with mountains reflecting in a crystal clear lake at sunset, dramatic sky with vibrant colors..."
+            )
+            
+            # Negative prompt input
+            negative_prompt = st.text_area(
+                "Elements to avoid (negative prompt):",
+                height=50,
+                placeholder="blurry, low quality, distorted, watermark, text, deformed..."
+            )
+            
+            # Quick example prompts
+            st.subheader("Example Prompts")
+            example_prompts = [
+                "A futuristic city with flying cars and neon lights",
+                "A photorealistic portrait of a fantasy creature",
+                "A cozy cabin in a snowy forest with northern lights"
+            ]
+            
+            # Create buttons for examples
+            cols = st.columns(len(example_prompts))
+            for i, (col, ex_prompt) in enumerate(zip(cols, example_prompts)):
+                with col:
+                    if st.button(f"Example {i+1}", key=f"txt2img_example_{i}"):
+                        prompt = ex_prompt
+                        st.session_state.txt2img_prompt = ex_prompt
+                        st.experimental_rerun()
+            
+            # Generate button
+            generate_pressed = st.button("Generate Image", type="primary", use_container_width=True)
+        
+        with col2:
+            st.subheader("Generated Images")
+            image_placeholder = st.empty()
+            
+            # Process generation when button is pressed
+            if generate_pressed and prompt:
+                with st.spinner("Generating your images..."):
+                    try:
+                        # Initialize the generator if not already done
+                        if 'txt2img_generator' not in st.session_state:
+                            st.session_state.txt2img_generator = initialize_text2img_generator()
+                        
+                        generator = st.session_state.txt2img_generator
+                        
+                        # Generate images
+                        images = generator.generate_images(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt,
+                            model=model_option,
+                            size=size_option,
+                            num_images=num_images,
+                            guidance_scale=guidance_scale,
+                            steps=steps,
+                            seed=seed
+                        )
+                        
+                        # Store images in session state
+                        st.session_state.generated_images = images
+                        
+                        # Display images
+                        if images:
+                            display_generated_images(images, image_placeholder)
+                        else:
+                            st.error("Failed to generate images. Please try again.")
+                    
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
+            
+            # Display previously generated images if they exist
+            elif 'generated_images' in st.session_state:
+                display_generated_images(st.session_state.generated_images, image_placeholder)
+
