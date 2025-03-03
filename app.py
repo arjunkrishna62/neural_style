@@ -9,11 +9,13 @@ from dotenv import load_dotenv
 from datetime import datetime
 from streamlit_drawable_canvas import st_canvas
 import io
+from torchvision import transforms
 
 
 from main import neural_style_transfer
 from text_to_image import TextToImageGenerator
 from src.pixel2turbo import Pix2Pix_Turbo
+from using_cnn import StyleTransferCNN
 
 load_dotenv()
 
@@ -49,12 +51,43 @@ def prepare_imgs(content_im, style_im, RGB=False):
 
 @st.cache_resource
 def initialize_text2img_generator():
-    """Initialize the Text-to-Image generator with API keys from environment variables"""
-    api_keys = {
-        'stability': os.getenv('STABILITY_API_KEY'),
-        'openai': os.getenv('OPENAI_API_KEY')
-    }
-    return TextToImageGenerator(api_keys)
+    """Initialize the Text-to-Image generator with Stability API key"""
+    try:
+        # Try to get API key from environment variables first
+        api_key = os.getenv('STABILITY_API_KEY')
+        
+        # If key is not in environment variables, get it from session state or user input
+        if not api_key:
+            st.warning("Stability API key not found in environment variables. Please enter it below:")
+            
+            # Use session state to persist API key
+            if 'stability_api_key' not in st.session_state:
+                st.session_state.stability_api_key = ''
+            
+            # API key input field
+            api_key = st.text_input(
+                "Enter Stability API Key:",
+                value=st.session_state.stability_api_key,
+                type="password",
+                key="stability_key_input"
+            )
+            
+            # Update session state
+            st.session_state.stability_api_key = api_key
+        
+        # Verify API key is present
+        if not api_key:
+            st.error("Please provide a Stability API key to continue.")
+            return None
+            
+        st.write("Initializing generator with API key")
+        
+        # Update to only use Stability API
+        generator = TextToImageGenerator({'stability': api_key})
+        return generator
+    except Exception as e:
+        st.error(f"Error initializing generator: {str(e)}")
+        return None
 
 
 @st.cache_resource
@@ -70,10 +103,16 @@ def load_pixel2turbo_model(model_type):
     model.set_eval()  # Set model to evaluation mode
     return model
 
-def process_pixel2turbo(model, input_image, prompt, randomness=0.0):
+def process_pixel2turbo(model, input_image, prompt, randomness):
     """Process an image with the Pixel2Turbo model"""
+    # Determine device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Move model to appropriate device
+    model = model.to(device)
+    
     # Convert PIL image to tensor
-    input_tensor = torch.from_numpy(input_image).float().cuda() / 127.5 - 1.0
+    input_tensor = torch.from_numpy(input_image).float().to(device) / 127.5 - 1.0
     input_tensor = input_tensor.permute(2, 0, 1).unsqueeze(0)
     
     # Process deterministically or with randomness
@@ -84,7 +123,7 @@ def process_pixel2turbo(model, input_image, prompt, randomness=0.0):
     else:
         # Generate noise map for stochastic generation
         shape = input_tensor.shape
-        noise = torch.randn((shape[0], 4, shape[2]//8, shape[3]//8), device="cuda")
+        noise = torch.randn((shape[0], 4, shape[2]//8, shape[3]//8), device=device)
         output = model(input_tensor, prompt=prompt, deterministic=False, r=1.0-randomness, noise_map=noise)
     
     # Convert output tensor to numpy array
@@ -107,10 +146,15 @@ def display_generated_images(images, container):
     # Display each image with a download button
     for i, (col, image) in enumerate(zip(cols, images)):
         with col:
-            st.image(image, caption=f"Generated Image {i+1}", use_column_width=True)
+            st.image(image, caption=f"Generated Image {i+1}", use_container_width=True)
             
-            # Convert numpy array to bytes for download
-            pil_image = Image.fromarray(image)
+            # Convert to PIL Image if it's a numpy array
+            if isinstance(image, np.ndarray):
+                pil_image = Image.fromarray(image)
+            else:
+                pil_image = image  # Already a PIL Image
+            
+            # Convert to bytes for download
             buf = io.BytesIO()
             pil_image.save(buf, format="PNG")
             byte_im = buf.getvalue()
@@ -125,7 +169,7 @@ def display_generated_images(images, container):
             )
             
             # Save image if option is selected
-            if 'save_txt2img_flag' in locals() and save_txt2img_flag:
+            if 'save_txt2img_flag' in st.session_state and st.session_state.save_txt2img_flag:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
                 pil_image.save(filename)
@@ -248,10 +292,85 @@ def print_info_txt2img():
     st.info("Enter a detailed prompt to generate an image!")
     
 
+def neural_style_transfer_wrapper(content_img, style_img, model_type, device, **kwargs):
+    """
+    Wrapper function to handle different NST models
+    """
+    if model_type == "VGG-19":
+        return neural_style_transfer(kwargs['cfg'], device)
+    elif model_type == "VGG-16":
+        kwargs['cfg']['model'] = 'vgg16'
+        return neural_style_transfer(kwargs['cfg'], device)
+    elif model_type == "CNN":
+        return neural_style_transfer_cnn(content_img, style_img, device)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+def neural_style_transfer_cnn(content_tensor, style_tensor, device):
+    """
+    Perform neural style transfer using the CNN model
+    
+    Args:
+        content_tensor (torch.Tensor): Content image tensor
+        style_tensor (torch.Tensor): Style image tensor
+        device (torch.device): Device to run the model on
+        
+    Returns:
+        numpy.ndarray: Stylized image as a numpy array
+    """
+    try:
+        # Initialize model
+        model = StyleTransferCNN().to(device)
+        model.eval()  # Set to evaluation mode
+        
+        # Move tensors to device
+        content_tensor = content_tensor.to(device)
+        style_tensor = style_tensor.to(device)
+        
+        # Generate stylized image
+        with torch.no_grad():
+            generated = model(content_tensor, style_tensor)
+        
+        # Convert output tensor to numpy array
+        output = generated.squeeze(0).cpu()
+        
+        # Denormalize the output
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        output = output * std + mean
+        
+        # Convert to numpy array and ensure proper range
+        output = output.numpy()
+        output = np.transpose(output, (1, 2, 0))
+        output = np.clip(output * 255, 0, 255).astype(np.uint8)
+        
+        return output
+        
+    except Exception as e:
+        st.error(f"Error in CNN style transfer: {str(e)}")
+        return None
+
+def get_size_options(model_option):
+    """Return appropriate size options based on selected model"""
+    if model_option in ['stable-diffusion-xl-1024-v0-9', 'stable-diffusion-xl-1024-v1-0']:
+        return [
+            "1024x1024",  # Default for SDXL
+            "1152x896",
+            "1216x832",
+            "1344x768",
+            "1536x640",
+            "640x1536",
+            "768x1344",
+            "832x1216",
+            "896x1152"
+        ]
+    else:
+        return ["512x512", "768x768", "1024x1024"]
+
 if __name__ == "__main__":
     
     
-    st.title('Optimized Neural Styel Transfer')
+    st.title('Neural Style Transfer')
     
     st.sidebar.title('Configuration')
     with st.sidebar:
@@ -272,14 +391,23 @@ if __name__ == "__main__":
         st.sidebar.subheader('Model')
         model_option = st.sidebar.selectbox(
             'Select AI Model:',
-            generator.get_available_models()
+            [
+                'stable-diffusion-v1-5',
+                'stable-diffusion-xl-1024-v1-0',
+                'stable-diffusion-xl-1024-v0-9'
+            ],
+            key='txt2img_model'
         )
         
-        # Image size selection
-        st.sidebar.subheader('Image Size')
+        # Get appropriate size options based on model
+        size_options = get_size_options(model_option)
+        
+        # Size selection with default that matches model requirements
         size_option = st.sidebar.selectbox(
             'Select image size:',
-            generator.get_available_sizes(model_option)
+            size_options,
+            index=0,
+            key='txt2img_size'
         )
         
         # Number of images
@@ -304,9 +432,10 @@ if __name__ == "__main__":
             
             steps = st.slider(
                 "Generation Steps:",
-                min_value=20,
+                min_value=10,
                 max_value=150,
-                value=50,
+                value=30,
+                step=1,
                 help="More steps generally result in higher quality but take longer."
             )
             
@@ -320,21 +449,138 @@ if __name__ == "__main__":
         st.sidebar.subheader('Save Options')
         save_txt2img_flag = st.sidebar.checkbox('Save generated images')
     
-    elif app_mode in ['Try NST']:
-        st.sidebar.title('Parameters')
+    elif app_mode == "Try NST":
+        # Model selection in sidebar
+        st.sidebar.title('NST Parameters')
+        model_type = st.sidebar.selectbox(
+            "Select Model Architecture",
+            ["VGG-19", "VGG-16", "CNN"],
+            help="Choose the neural network for style transfer"
+        )
         
-        st.sidebar.subheader("Weights",
-                         help="Higher values preserve content structure better")
-        step=1e-1
-        cweight = st.sidebar.number_input("Content", value=1e-3, step=step, format="%.5f")
-        sweight = st.sidebar.number_input("Style", value=1e-1, step=step, format="%.5f")
-        vweight = st.sidebar.number_input("Variation", value=0.0, step=step, format="%.5f")
-       
-        st.sidebar.subheader('Number of iterations')
-        niter = st.sidebar.number_input('Iterations', min_value=1, max_value=1000, value=20, step=1)
-       
-        st.sidebar.subheader('Save or not the stylized image')
-        save_flag = st.sidebar.checkbox('Save result')
+        # Dynamic parameter adjustment based on model
+        if model_type in ["VGG-19", "VGG-16"]:
+            st.sidebar.subheader("Weights",
+                             help="Higher values preserve content structure better")
+            step=1e-1
+            cweight = st.sidebar.number_input("Content", value=1e-3, step=step, format="%.5f")
+            sweight = st.sidebar.number_input("Style", value=1e-1, step=step, format="%.5f")
+            vweight = st.sidebar.number_input("Variation", value=0.0, step=step, format="%.5f")
+           
+            st.sidebar.subheader('Number of iterations')
+            niter = st.sidebar.number_input('Iterations', min_value=1, max_value=1000, value=20, step=1)
+           
+            st.sidebar.subheader('Save or not the stylized image')
+            save_flag = st.sidebar.checkbox('Save result')
+            
+            # Configuration for VGG models
+            cfg = {
+                'output_img_path': os.path.join(os.path.dirname(__file__), "app_stylized_image.jpg"),
+                'style_img': None,  # Will be set when images are uploaded
+                'content_img': None,  # Will be set when images are uploaded
+                'content_weight': cweight,
+                'style_weight': sweight,
+                'tv_weight': vweight,
+                'optimizer': 'lbfgs',
+                'model': model_type.lower(),  # 'vgg19' or 'vgg16'
+                'init_method': 'random',
+                'running_app': True,
+                'save_flag': save_flag,
+                'niter': niter
+            }
+        
+        elif model_type == "CNN":
+            st.sidebar.subheader("Model Parameters")
+            content_weight = st.sidebar.slider("Content Weight", 0.0, 2.0, 1.0)
+            style_weight = st.sidebar.slider("Style Weight", 1e4, 1e6, 1e5)
+            save_flag = st.sidebar.checkbox('Save result')
+
+        # Main content area for image upload
+        st.markdown("### Upload the pair of images to use")        
+        col1, col2 = st.columns(2)
+        im_types = ["png", "jpg", "jpeg"]
+        
+        # Create file uploaders in a two column layout
+        with col1:
+            file_c = st.file_uploader("Choose CONTENT Image", 
+                                     type=im_types,
+                                     key="nst_content_uploader")
+            imc_ph = st.empty()            
+        with col2: 
+            file_s = st.file_uploader("Choose STYLE Image", 
+                                     type=im_types,
+                                     key="nst_style_uploader")
+            ims_ph = st.empty()
+        
+        # If both images have been uploaded then preprocess and show them
+        if all([file_s, file_c]):
+            # Preprocess
+            im_c = np.array(Image.open(file_c))
+            im_s = np.array(Image.open(file_s))
+            im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
+            
+            # Show images
+            imc_ph.image(im_c, use_column_width=True)
+            ims_ph.image(im_s, use_column_width=True)
+
+            # Update VGG configuration with images if using VGG
+            if model_type in ["VGG-19", "VGG-16"]:
+                cfg['content_img'] = im_c
+                cfg['style_img'] = im_s
+            elif model_type == "CNN":
+                # Prepare tensors for CNN model
+                transform = transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                                      std=[0.229, 0.224, 0.225])
+                ])
+                content_tensor = transform(Image.fromarray(im_c)).unsqueeze(0)
+                style_tensor = transform(Image.fromarray(im_s)).unsqueeze(0)
+            
+            st.markdown("### When ready, START the image generation!")
+            
+            # Button for starting the stylized image
+            start_flag = st.button("START", help="Start the style transfer process")
+            bt_ph = st.empty()
+        
+            if start_flag:
+                if not all([file_s, file_c]):
+                    bt_ph.markdown("You need to **upload the images** first! :)")
+                else:
+                    bt_ph.markdown(f"Processing using {model_type}...")
+                    
+                    # Create progress bar
+                    progress = st.progress(0.)
+                    res_im_ph = st.empty()
+                    
+                    try:
+                        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                        
+                        if model_type in ["VGG-19", "VGG-16"]:
+                            # Add progress bar and result placeholder to config
+                            cfg['res_im_ph'] = res_im_ph
+                            cfg['st_bar'] = progress
+                            result_im = neural_style_transfer(cfg, device)
+                        else:  # CNN model
+                            result_im = neural_style_transfer_cnn(content_tensor, style_tensor, device)
+                        
+                        if result_im is not None:
+                            res_im_ph.image(result_im)
+                            bt_ph.markdown("Style transfer complete!")
+                            
+                            # Save if requested
+                            if save_flag:
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                filename = f"nst_{model_type.lower()}_{timestamp}.jpg"
+                                if isinstance(result_im, np.ndarray):
+                                    Image.fromarray(result_im).save(filename)
+                                else:
+                                    result_im.save(filename)
+                                st.success(f"Image saved as {filename}")
+                    
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
+                        st.exception(e)
             
     elif app_mode in ['About Pixel2Turbo', 'Try Pixel2Turbo']:
         st.sidebar.title('Pixel2Turbo Parameters')
@@ -346,10 +592,7 @@ if __name__ == "__main__":
         
         # Text prompt for guiding the generation
         st.sidebar.subheader('Text Prompt')
-        prompt = st.sidebar.text_area(
-            'Enter a text prompt to guide the generation:',
-            'A detailed, high-quality photorealistic image.'
-        )
+        prompt = st.sidebar.text_input("Enter your text prompt:", "A beautiful landscape painting")
         
         # Randomness slider (only for the stochastic model)
         if model_type == 'Sketch to Image (Stochastic)':
@@ -381,10 +624,14 @@ if __name__ == "__main__":
         # Create file uploaders in a two column layout, as well as
         # placeholder to later show the images uploaded:
         with col1:
-            file_c = st.file_uploader("Choose CONTENT Image", type=im_types)
+            file_c = st.file_uploader("Choose CONTENT Image", 
+                                     type=im_types,
+                                     key="nst_content_uploader")
             imc_ph = st.empty()            
         with col2: 
-            file_s = st.file_uploader("Choose STYLE Image", type=im_types)
+            file_s = st.file_uploader("Choose STYLE Image", 
+                                     type=im_types,
+                                     key="nst_style_uploader")
             ims_ph = st.empty()
         
         # if both images have been uploaded then preprocess and show them:
@@ -447,16 +694,52 @@ if __name__ == "__main__":
         print_info_pixel2turbo()
         
     elif app_mode == options[3]:  # Run Pixel2Turbo
-        st.markdown("")
+        st.markdown("### Generate Images with Pixel2Turbo")
+        
+        # Add model type selection in sidebar
+        st.sidebar.title('Pixel2Turbo Parameters')
+        model_type = st.sidebar.selectbox(
+            'Select model type:',
+            ['Edge to Image', 'Sketch to Image (Stochastic)'],
+            key='pixel2turbo_model'
+        )
+        
+        # Text prompt input
+        prompt = st.text_input(
+            "Enter your text prompt:",
+            "A beautiful landscape painting",
+            help="Describe the image you want to generate",
+            key='pixel2turbo_prompt'
+        )
+        
+        # Randomness slider (only for stochastic model)
+        randomness = 0.0
+        if model_type == 'Sketch to Image (Stochastic)':
+            randomness = st.sidebar.slider(
+                'Adjust randomness level:',
+                min_value=0.0,
+                max_value=1.0,
+                value=0.3,
+                step=0.05,
+                help="Higher values increase variation in generated images",
+                key='pixel2turbo_randomness'
+            )
+        
+        # Save option
+        save_p2t_flag = st.sidebar.checkbox('Save result', key='pixel2turbo_save')
         
         # File uploader for the input image
         im_types = ["png", "jpg", "jpeg"]
-        file_input = st.file_uploader("Choose Input Image", type=im_types)
+        file_input = st.file_uploader(
+            "Choose Input Image", 
+            type=im_types,
+            key="pixel2turbo_uploader"
+        )
         
         # Display the input image if uploaded
         if file_input:
             input_image = np.array(Image.open(file_input))
-            st.image(input_image, caption="Input Image", use_column_width=True)
+            st.image(input_image, caption="Input Image", use_container_width=True)
             
             # Resize image if needed (SD models typically work with 512x512)
             h, w = input_image.shape[:2]
@@ -467,37 +750,38 @@ if __name__ == "__main__":
                 st.info(f"Image resized to {new_size[0]}x{new_size[1]} for processing")
             
             # Button to start generation
-            start_p2t_flag = st.button("Generate Image", help="Start the Pixel2Turbo generation process")
+            start_p2t_flag = st.button(
+                "Generate Image", 
+                help="Start the Pixel2Turbo generation process",
+                key='pixel2turbo_generate'
+            )
             bt_p2t_ph = st.empty()  # Message placeholder
             
             if start_p2t_flag:
                 bt_p2t_ph.markdown("Generating image with Pixel2Turbo...")
                 
                 try:
-                    # Load the selected model
-                    with st.spinner(f"Loading {model_type} model..."):
-                        model = load_pixel2turbo_model(model_type)
+                    # Load the model
+                    model = load_pixel2turbo_model(model_type)
                     
-                    # Process the image
-                    with st.spinner("Processing image..."):
-                        output_image = process_pixel2turbo(model, input_image, prompt, randomness)
+                    # Process the image with the prompt
+                    output_image = process_pixel2turbo(model, input_image, prompt, randomness)
                     
                     # Show the result
-                    st.image(output_image, caption="Generated Image", use_column_width=True)
+                    st.image(output_image, caption="Generated Image", use_container_width=True)
                     
                     # Save the result if requested
                     if save_p2t_flag:
-                        parent_dir = os.path.dirname(__file__)
-                        out_img_path = os.path.join(parent_dir, "pixel2turbo_output.jpg")
-                        cv2.imwrite(out_img_path, cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR))
-                        st.success(f"Image saved to {out_img_path}")
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"pixel2turbo_output_{timestamp}.jpg"
+                        Image.fromarray(output_image).save(filename)
+                        st.success(f"Image saved as {filename}")
                     
                     bt_p2t_ph.markdown("Image generation complete!")
                     
                 except Exception as e:
                     bt_p2t_ph.error(f"Error during image generation: {str(e)}")
                     st.exception(e)
-            
         else:
             st.info("Please upload an image to begin")
     elif app_mode == options[4]:  # About Text-to-Image
@@ -515,35 +799,25 @@ if __name__ == "__main__":
             prompt = st.text_area(
                 "Describe the image you want to generate:",
                 height=100,
+                key="txt2img_prompt_input",
                 placeholder="A serene landscape with mountains reflecting in a crystal clear lake at sunset, dramatic sky with vibrant colors..."
             )
             
             # Negative prompt input
             negative_prompt = st.text_area(
                 "Elements to avoid (negative prompt):",
-                height=50,
+                height=70,
+                key="txt2img_negative_prompt",
                 placeholder="blurry, low quality, distorted, watermark, text, deformed..."
             )
             
-            # Quick example prompts
-            st.subheader("Example Prompts")
-            example_prompts = [
-                "A futuristic city with flying cars and neon lights",
-                "A photorealistic portrait of a fantasy creature",
-                "A cozy cabin in a snowy forest with northern lights"
-            ]
-            
-            # Create buttons for examples
-            cols = st.columns(len(example_prompts))
-            for i, (col, ex_prompt) in enumerate(zip(cols, example_prompts)):
-                with col:
-                    if st.button(f"Example {i+1}", key=f"txt2img_example_{i}"):
-                        prompt = ex_prompt
-                        st.session_state.txt2img_prompt = ex_prompt
-                        st.experimental_rerun()
-            
-            # Generate button
-            generate_pressed = st.button("Generate Image", type="primary", use_container_width=True)
+            # Generate button with unique key
+            generate_pressed = st.button(
+                "Generate Image", 
+                type="primary", 
+                key="txt2img_generate_button",
+                use_container_width=True
+            )
         
         with col2:
             st.subheader("Generated Images")
@@ -553,37 +827,39 @@ if __name__ == "__main__":
             if generate_pressed and prompt:
                 with st.spinner("Generating your images..."):
                     try:
-                        # Initialize the generator if not already done
-                        if 'txt2img_generator' not in st.session_state:
-                            st.session_state.txt2img_generator = initialize_text2img_generator()
+                        # Debug information
+                        st.write(f"Selected model: {model_option}")
+                        st.write(f"Selected size: {size_option}")
                         
-                        generator = st.session_state.txt2img_generator
-                        
-                        # Generate images
+                        # Generate images with validated size
                         images = generator.generate_images(
                             prompt=prompt,
                             negative_prompt=negative_prompt,
                             model=model_option,
-                            size=size_option,
+                            size=size_option,  # This will now be a valid size for the model
                             num_images=num_images,
                             guidance_scale=guidance_scale,
                             steps=steps,
                             seed=seed
                         )
                         
-                        # Store images in session state
-                        st.session_state.generated_images = images
-                        
-                        # Display images
                         if images:
                             display_generated_images(images, image_placeholder)
                         else:
-                            st.error("Failed to generate images. Please try again.")
+                            st.error("No images were generated. Please try again.")
                     
                     except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
-            
-            # Display previously generated images if they exist
-            elif 'generated_images' in st.session_state:
-                display_generated_images(st.session_state.generated_images, image_placeholder)
+                        st.error(f"Error during image generation: {str(e)}")
+                        st.exception(e)
+                        
+                        # Debug API keys
+                        api_keys = {
+                            'stability': os.getenv('STABILITY_API_KEY'),
+                            'openai': os.getenv('OPENAI_API_KEY')
+                        }
+                        st.write("API Keys status:")
+                        for key, value in api_keys.items():
+                            st.write(f"{key}: {'Present' if value else 'Missing'}")
+            elif generate_pressed:
+                st.warning("Please enter a prompt before generating images.")
 
