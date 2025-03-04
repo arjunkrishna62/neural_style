@@ -370,13 +370,13 @@ def get_size_options(model_option):
 if __name__ == "__main__":
     
     
-    st.title('Neural Style Transfer')
+    st.title('Optmized NST')
     
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST', 'About Pixel2Turbo', 'Run Pixel2Turbo', 
-                      'About Text-to-Image', 'Generate from Text']
+            options = ['About NST', 'Try NST', 'About Pix2img', 'Try Pixel2img', 
+                      'About Text-to-Image', 'Generate from prompt']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
     
@@ -503,13 +503,13 @@ if __name__ == "__main__":
         # Create file uploaders in a two column layout
         with col1:
             file_c = st.file_uploader("Choose CONTENT Image", 
-                                     type=im_types,
-                                     key="nst_content_uploader")
+                                    type=im_types,
+                                    key="nst_content_uploader")
             imc_ph = st.empty()            
         with col2: 
             file_s = st.file_uploader("Choose STYLE Image", 
-                                     type=im_types,
-                                     key="nst_style_uploader")
+                                    type=im_types,
+                                    key="nst_style_uploader")
             ims_ph = st.empty()
         
         # If both images have been uploaded then preprocess and show them
@@ -626,12 +626,12 @@ if __name__ == "__main__":
         with col1:
             file_c = st.file_uploader("Choose CONTENT Image", 
                                      type=im_types,
-                                     key="nst_content_uploader")
+                                     key="nst_content_uploader_1")
             imc_ph = st.empty()            
         with col2: 
             file_s = st.file_uploader("Choose STYLE Image", 
                                      type=im_types,
-                                     key="nst_style_uploader")
+                                     key="nst_style_uploader_1")
             ims_ph = st.empty()
         
         # if both images have been uploaded then preprocess and show them:
