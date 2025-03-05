@@ -473,21 +473,21 @@ if __name__ == "__main__":
             st.sidebar.subheader('Save or not the stylized image')
             save_flag = st.sidebar.checkbox('Save result')
             
-            # Configuration for VGG models
-            cfg = {
-                'output_img_path': os.path.join(os.path.dirname(__file__), "app_stylized_image.jpg"),
-                'style_img': None,  # Will be set when images are uploaded
-                'content_img': None,  # Will be set when images are uploaded
-                'content_weight': cweight,
-                'style_weight': sweight,
-                'tv_weight': vweight,
-                'optimizer': 'lbfgs',
-                'model': model_type.lower(),  # 'vgg19' or 'vgg16'
-                'init_method': 'random',
-                'running_app': True,
-                'save_flag': save_flag,
-                'niter': niter
-            }
+            # # Configuration for VGG models
+            # cfg = {
+            #     'output_img_path': os.path.join(os.path.dirname(__file__), "app_stylized_image.jpg"),
+            #     'style_img': None,  # Will be set when images are uploaded
+            #     'content_img': None,  # Will be set when images are uploaded
+            #     'content_weight': cweight,
+            #     'style_weight': sweight,
+            #     'tv_weight': vweight,
+            #     'optimizer': 'lbfgs',
+            #     'model': model_type.lower(),  # 'vgg19' or 'vgg16'
+            #     'init_method': 'random',
+            #     'running_app': True,
+            #     'save_flag': save_flag,
+            #     'niter': niter
+            # }
         
         elif model_type == "CNN":
             st.sidebar.subheader("Model Parameters")
@@ -496,91 +496,91 @@ if __name__ == "__main__":
             save_flag = st.sidebar.checkbox('Save result')
 
         # Main content area for image upload
-        st.markdown("### Upload the pair of images to use")        
-        col1, col2 = st.columns(2)
-        im_types = ["png", "jpg", "jpeg"]
+        # st.markdown("### Upload the pair of images to use")        
+        # col1, col2 = st.columns(2)
+        # im_types = ["png", "jpg", "jpeg"]
         
-        # Create file uploaders in a two column layout
-        with col1:
-            file_c = st.file_uploader("Choose CONTENT Image", 
-                                    type=im_types,
-                                    key="nst_content_uploader")
-            imc_ph = st.empty()            
-        with col2: 
-            file_s = st.file_uploader("Choose STYLE Image", 
-                                    type=im_types,
-                                    key="nst_style_uploader")
-            ims_ph = st.empty()
+        # # Create file uploaders in a two column layout
+        # with col1:
+        #     file_c = st.file_uploader("Choose CONTENT Image", 
+        #                             type=im_types,
+        #                             key="nst_content_uploader")
+        #     imc_ph = st.empty()            
+        # with col2: 
+        #     file_s = st.file_uploader("Choose STYLE Image", 
+        #                             type=im_types,
+        #                             key="nst_style_uploader")
+        #     ims_ph = st.empty()
         
-        # If both images have been uploaded then preprocess and show them
-        if all([file_s, file_c]):
-            # Preprocess
-            im_c = np.array(Image.open(file_c))
-            im_s = np.array(Image.open(file_s))
-            im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
+        # # If both images have been uploaded then preprocess and show them
+        # if all([file_s, file_c]):
+        #     # Preprocess
+        #     im_c = np.array(Image.open(file_c))
+        #     im_s = np.array(Image.open(file_s))
+        #     im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
             
-            # Show images
-            imc_ph.image(im_c, use_column_width=True)
-            ims_ph.image(im_s, use_column_width=True)
+        #     # Show images
+        #     imc_ph.image(im_c, use_column_width=True)
+        #     ims_ph.image(im_s, use_column_width=True)
 
-            # Update VGG configuration with images if using VGG
-            if model_type in ["VGG-19", "VGG-16"]:
-                cfg['content_img'] = im_c
-                cfg['style_img'] = im_s
-            elif model_type == "CNN":
-                # Prepare tensors for CNN model
-                transform = transforms.Compose([
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-                                      std=[0.229, 0.224, 0.225])
-                ])
-                content_tensor = transform(Image.fromarray(im_c)).unsqueeze(0)
-                style_tensor = transform(Image.fromarray(im_s)).unsqueeze(0)
+            # # Update VGG configuration with images if using VGG
+            # if model_type in ["VGG-19", "VGG-16"]:
+            #     cfg['content_img'] = im_c
+            #     cfg['style_img'] = im_s
+            # elif model_type == "CNN":
+            #     # Prepare tensors for CNN model
+            #     transform = transforms.Compose([
+            #         transforms.ToTensor(),
+            #         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+            #                           std=[0.229, 0.224, 0.225])
+            #     ])
+            #     content_tensor = transform(Image.fromarray(im_c)).unsqueeze(0)
+            #     style_tensor = transform(Image.fromarray(im_s)).unsqueeze(0)
             
-            st.markdown("### When ready, START the image generation!")
+            # st.markdown("### When ready, START the image generation!")
             
-            # Button for starting the stylized image
-            start_flag = st.button("START", help="Start the style transfer process")
-            bt_ph = st.empty()
+            # # Button for starting the stylized image
+            # start_flag = st.button("START", help="Start the style transfer process")
+            # bt_ph = st.empty()
         
-            if start_flag:
-                if not all([file_s, file_c]):
-                    bt_ph.markdown("You need to **upload the images** first! :)")
-                else:
-                    bt_ph.markdown(f"Processing using {model_type}...")
+            # if start_flag:
+            #     if not all([file_s, file_c]):
+            #         bt_ph.markdown("You need to **upload the images** first! :)")
+            #     else:
+            #         bt_ph.markdown(f"Processing using {model_type}...")
                     
-                    # Create progress bar
-                    progress = st.progress(0.)
-                    res_im_ph = st.empty()
+            #         # Create progress bar
+            #         progress = st.progress(0.)
+            #         res_im_ph = st.empty()
                     
-                    try:
-                        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            #         try:
+            #             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                         
-                        if model_type in ["VGG-19", "VGG-16"]:
-                            # Add progress bar and result placeholder to config
-                            cfg['res_im_ph'] = res_im_ph
-                            cfg['st_bar'] = progress
-                            result_im = neural_style_transfer(cfg, device)
-                        else:  # CNN model
-                            result_im = neural_style_transfer_cnn(content_tensor, style_tensor, device)
+            #             if model_type in ["VGG-19", "VGG-16"]:
+            #                 # Add progress bar and result placeholder to config
+            #                 cfg['res_im_ph'] = res_im_ph
+            #                 cfg['st_bar'] = progress
+            #                 result_im = neural_style_transfer(cfg, device)
+            #             else:  # CNN model
+            #                 result_im = neural_style_transfer_cnn(content_tensor, style_tensor, device)
                         
-                        if result_im is not None:
-                            res_im_ph.image(result_im)
-                            bt_ph.markdown("Style transfer complete!")
+            #             if result_im is not None:
+            #                 res_im_ph.image(result_im)
+            #                 bt_ph.markdown("Style transfer complete!")
                             
-                            # Save if requested
-                            if save_flag:
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                filename = f"nst_{model_type.lower()}_{timestamp}.jpg"
-                                if isinstance(result_im, np.ndarray):
-                                    Image.fromarray(result_im).save(filename)
-                                else:
-                                    result_im.save(filename)
-                                st.success(f"Image saved as {filename}")
+            #                 # Save if requested
+            #                 if save_flag:
+            #                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            #                     filename = f"nst_{model_type.lower()}_{timestamp}.jpg"
+            #                     if isinstance(result_im, np.ndarray):
+            #                         Image.fromarray(result_im).save(filename)
+            #                     else:
+            #                         result_im.save(filename)
+            #                     st.success(f"Image saved as {filename}")
                     
-                    except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
-                        st.exception(e)
+            #         except Exception as e:
+            #             st.error(f"An error occurred: {str(e)}")
+            #             st.exception(e)
             
     elif app_mode in ['About Pixel2Turbo', 'Try Pixel2Turbo']:
         st.sidebar.title('Pixel2Turbo Parameters')
