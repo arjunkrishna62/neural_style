@@ -13,16 +13,14 @@ class TextToImageGenerator:
     
     def __init__(self, api_keys: Optional[Dict[str, str]] = None):
         """
-        Initialize the text-to-image generator with API keys.
         
-        Args:
-            api_keys: Dictionary of API keys for different services
+            api_keys: 
                      {'stability': 'your-stability-api-key',
                       'openai': 'your-openai-api-key'}
         """
         self.api_keys = api_keys or {}
         
-        # Get API keys from environment variables if not provided
+        
         if 'stability' not in self.api_keys and os.getenv('STABILITY_API_KEY'):
             self.api_keys['stability'] = os.getenv('STABILITY_API_KEY')
             

@@ -132,18 +132,8 @@ def show_image(x, cfg, save=True):
             
 
 def neural_style_transfer(cfg, device):
-    """
-    Neural style transfer between the content image
-    and the style image following the method 
-    proposed in the work of Gatys et al.:
-    https://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Gatys_Image_Style_Transfer_CVPR_2016_paper.pdf
-    """
     
-    # as explained in: https://pytorch.org/vision/stable/models.html
-    # the vgg used was trained with images in a [0,1] pixel scale and 
-    # were normlized (zero-mean and unit-std). This is done hereafter.
-    # However, following  https://github.com/gordicaleksa/pytorch-neural-style-transfer
-    # we operate on a [0,255] scale (I think this makes more stable gradients):
+  
     transform = transforms.Compose(
             [transforms.ToTensor(),
              transforms.Lambda(lambda x: x.mul(255.)),
@@ -176,9 +166,7 @@ def neural_style_transfer(cfg, device):
     criterion = nn.MSELoss(reduction='mean')
     
     for i in range(cfg["niter"]):#niter//10
-        # LBFGS requires a closure function that computes the loss and clears
-        # the gradient, see:
-        # https://pytorch.org/docs/1.9.1/optim.html#:~:text=and%20return%20it.-,Example,-%3A
+       
         def closure():
             optimizer.zero_grad()
             features = model(optimizing_img[None])
