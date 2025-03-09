@@ -80,12 +80,12 @@ def initialize_text2img_generator():
             # Update session state
             st.session_state.stability_api_key = api_key
         
-        # Verify API key is present
+       
         if not api_key:
             st.error("Please provide a Stability API key to continue.")
             return None
             
-        st.write("Initializing generator with API key")
+        #st.write("Initializing generator with API key")
         
         # Update to only use Stability API
         generator = TextToImageGenerator({'stability': api_key})
@@ -124,7 +124,7 @@ generator = get_generator()
 
 @st.cache_resource
 def load_pixel2turbo_model(model_type):
-    """Load the Pixel2Turbo model based on selection"""
+   
     if model_type == "Edge to Image":
         model = Pix2Pix_Turbo(pretrained_name="edge_to_image")
     elif model_type == "Sketch to Image (Stochastic)":
@@ -136,8 +136,7 @@ def load_pixel2turbo_model(model_type):
     return model
 
 def process_pixel2turbo(model, input_image, prompt, randomness):
-    """Process an image with the Pixel2Turbo model"""
-    # Determine device
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Move model to appropriate device
@@ -209,8 +208,7 @@ def display_generated_images(images, container):
 
 
 def print_info_NST():
-    """ Print basic information about Neural Style Transfer within the app.
-    """    
+       
     st.markdown("""
                 ## What is NST?
                 **NST** (*Neural Style Transfer*) is a Deep Learning
@@ -240,7 +238,7 @@ def print_info_NST():
     col2.header("Result")
     col2.image(im_rs, use_container_width=True, channels="BGR")
     
-    # Information about the parameters:
+    
     st.markdown("""
             ## Parameters at the left sidebar
             ### Weights of the Loss function (lambdas)
@@ -272,7 +270,7 @@ def print_info_NST():
             """)
 
 def print_info_pixel2turbo():
-    """Print basic information about Pixel2Turbo within the app."""
+    
     st.markdown("""
                 ## What is Pixel2Turbo?
                 **Pixel2Turbo** is a fast image-to-image translation model based on Stable Diffusion Turbo. 
@@ -325,9 +323,7 @@ def print_info_txt2img():
     
 
 def neural_style_transfer_wrapper(content_img, style_img, model_type, device, **kwargs):
-    """
-    Wrapper function to handle different NST models
-    """
+   
     if model_type == "VGG-19":
         return neural_style_transfer(kwargs['cfg'], device)
     elif model_type == "VGG-16":
@@ -339,17 +335,7 @@ def neural_style_transfer_wrapper(content_img, style_img, model_type, device, **
         raise ValueError(f"Unknown model type: {model_type}")
 
 def neural_style_transfer_cnn(content_tensor, style_tensor, device):
-    """
-    Perform neural style transfer using the CNN model
-    
-    Args:
-        content_tensor (torch.Tensor): Content image tensor
-        style_tensor (torch.Tensor): Style image tensor
-        device (torch.device): Device to run the model on
-        
-    Returns:
-        numpy.ndarray: Stylized image as a numpy array
-    """
+   
     try:
         # Initialize model
         model = StyleTransferCNN().to(device)
@@ -383,7 +369,7 @@ def neural_style_transfer_cnn(content_tensor, style_tensor, device):
         return None
 
 def get_size_options(model_option):
-    """Return appropriate size options based on selected model"""
+    
     if model_option in ['stable-diffusion-xl-1024-v0-9', 'stable-diffusion-xl-1024-v1-0']:
         return [
             "1024x1024",  # Default for SDXL
@@ -435,7 +421,7 @@ if __name__ == "__main__":
             niter = st.sidebar.number_input('Iterations', min_value=1, max_value=1000, value=20, step=1)
            
             st.sidebar.subheader('Save or not the stylized image')
-            save_flag = st.sidebar.checkbox('Save result')
+            save_flag = st.sidebar.checkbox('Save result', key='save_vgg')
             
             # # Configuration for VGG models
             # cfg = {
@@ -455,11 +441,20 @@ if __name__ == "__main__":
         
         elif model_type == "CNN":
             st.sidebar.subheader("Model Parameters")
-            content_weight = st.sidebar.slider("Content Weight", 0.0, 2.0, 1.0)
-            style_weight = st.sidebar.slider("Style Weight", 1e4, 1e6, 1e5)
+             
+            cweight = st.sidebar.slider("Content Weight", 0.0, 1e1, 1e5)  # Add this
+            sweight = st.sidebar.slider("Style Weight", 0.0, 1e1, 1e5)     # Add this
+            vweight = st.sidebar.slider("Variation Weight", 0.0, 1e1, 1e4)  # Add this if needed
             save_flag = st.sidebar.checkbox('Save result')
 
-        # Main content area for image upload
+            st.sidebar.subheader('Number of iterations')
+            niter = st.sidebar.number_input('Iterations', min_value=1, max_value=1000, value=20, step=1)
+           
+            st.sidebar.subheader('Save or not the stylized image')
+            save_flag = st.sidebar.checkbox('Save result', key = 'save_cnn')
+          
+            
+            
         # st.markdown("### Upload the pair of images to use")        
         # col1, col2 = st.columns(2)
         # im_types = ["png", "jpg", "jpeg"]
@@ -911,8 +906,9 @@ if __name__ == "__main__":
                         'stability': os.getenv('STABILITY_API_KEY'),
                         'openai': os.getenv('OPENAI_API_KEY')
                         }
-                    st.write("API Keys status:")
-                    for key, value in api_keys.items():
-                        st.write(f"{key}: {'Present' if value else 'Missing'}")
+
+                        st.write("API Keys status:")
+                        for key, value in api_keys.items():
+                            st.write(f"{key}: {'Present' if value else 'Missing'}")
             elif generate_pressed:
                 st.warning("Please enter a prompt before generating images.")
