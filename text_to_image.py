@@ -6,26 +6,18 @@ from typing import List, Optional, Tuple, Dict, Any
 import base64
 
 class TextToImageGenerator:
-    """
-    A modular text-to-image generation class that can be integrated into existing Streamlit applications.
-    Supports multiple AI models for image generation based on text prompts.
-    """
-    
     def __init__(self, api_keys: Optional[Dict[str, str]] = None):
-        """
-        
-            api_keys: 
-                     {'stability': 'your-stability-api-key',
-                      'openai': 'your-openai-api-key'}
-        """
         self.api_keys = api_keys or {}
         
-        
+        # Load from environment if not provided in constructor
         if 'stability' not in self.api_keys and os.getenv('STABILITY_API_KEY'):
             self.api_keys['stability'] = os.getenv('STABILITY_API_KEY')
             
         if 'openai' not in self.api_keys and os.getenv('OPENAI_API_KEY'):
             self.api_keys['openai'] = os.getenv('OPENAI_API_KEY')
+        
+        # Debug output for initialization
+        print(f"TextToImageGenerator initialized with API keys for: {list(self.api_keys.keys())}")
     
     def generate_images(
         self,
@@ -40,30 +32,18 @@ class TextToImageGenerator:
     ) -> List[Image.Image]:
         """
         Generate images based on text prompt using the specified model.
-        
-        Args:
-            prompt: Text description of the desired image
-            model: Model to use for generation ('Stable Diffusion', 'DALL-E', 'Midjourney API')
-            size: Image size as 'widthxheight' string
-            num_images: Number of images to generate
-            negative_prompt: Elements to avoid in the generated image
-            guidance_scale: Higher values increase prompt adherence
-            steps: Number of diffusion steps (more = higher quality but slower)
-            seed: Random seed for reproducibility
-            
-        Returns:
-            List of PIL Image objects
         """
+        print(f"Generating images with model: {model}, prompt: {prompt[:50]}...")
+        
         if model == "Stable Diffusion":
             return self._generate_with_stability_ai(
                 prompt, negative_prompt, size, num_images, guidance_scale, steps, seed
             )
         elif model == "DALL-E":
-            return self._generate_with_dalle(prompt, size, num_images, negative_prompt)
-        elif model == "Midjourney API":
-            return self._generate_with_midjourney(prompt, size, num_images)
+            return self._generate_with_openai(prompt, size, num_images, negative_prompt)
         else:
             # Default to placeholder images for unsupported models
+            print(f"Unsupported model: {model}")
             return [self._create_placeholder_image(f"{model}: {prompt[:30]}...", size) 
                    for _ in range(num_images)]
     
@@ -77,9 +57,7 @@ class TextToImageGenerator:
         steps: int,
         seed: Optional[int]
     ) -> List[Image.Image]:
-        """
-        Generate images using Stability AI's API (Stable Diffusion).
-        """
+        
         api_key = self.api_keys.get('stability')
         if not api_key:
             print("Warning: Stability AI API key not found. Using placeholder images.")
@@ -109,15 +87,17 @@ class TextToImageGenerator:
                 "steps": steps,
             }
             
-            # Add negative prompt if provided
             if negative_prompt:
                 payload["text_prompts"].append({"text": negative_prompt, "weight": -1.0})
             
-            # Add seed if provided
             if seed is not None:
                 payload["seed"] = seed
             
+            print(f"Sending request to Stability API with payload: {payload}")
+            
             response = requests.post(url, headers=headers, json=payload)
+            
+            print(f"Stability API response status code: {response.status_code}")
             
             if response.status_code == 200:
                 images = []
@@ -126,6 +106,7 @@ class TextToImageGenerator:
                     image_bytes = base64.b64decode(image_data["base64"])
                     image = Image.open(io.BytesIO(image_bytes))
                     images.append(image)
+                print(f"Successfully generated {len(images)} images")
                 return images
             else:
                 print(f"Error from Stability API: {response.status_code}, {response.text}")
@@ -134,19 +115,21 @@ class TextToImageGenerator:
                 
         except Exception as e:
             print(f"Exception in Stability AI generation: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             return [self._create_placeholder_image(f"Error: {str(e)[:30]}...", size) 
                    for _ in range(num_images)]
     
-    def _generate_with_dalle(
+    def _generate_with_openai(
         self, 
         prompt: str, 
         size: str, 
         num_images: int,
         negative_prompt: str = ""
     ) -> List[Image.Image]:
-        """
-        Generate images using OpenAI's DALL-E API.
-        """
+        """Generate images using OpenAI's DALL-E API."""
+        from openai import OpenAI
+        
         api_key = self.api_keys.get('openai')
         if not api_key:
             print("Warning: OpenAI API key not found. Using placeholder images.")
@@ -154,82 +137,104 @@ class TextToImageGenerator:
                    for _ in range(num_images)]
         
         try:
-            # For actual implementation, you would use OpenAI's API
-            # This is an example of how it would be implemented:
-            """
-            import openai
-            openai.api_key = api_key
+            client = OpenAI(api_key=api_key)
             
+            # Convert size to DALL-E format (e.g., "1024x1024")
+            size_map = {
+                "256x256": "256x256",
+                "512x512": "512x512", 
+                "1024x1024": "1024x1024",
+                "768x768": "1024x1024",  # Fallback to closest supported size
+                "1024x1536": "1024x1024"  # Fallback to closest supported size
+            }
+            dalle_size = size_map.get(size, "1024x1024")
+            
+            # For DALL-E, incorporate negative prompt if provided
             if negative_prompt:
-                # For DALL-E, you might integrate negative prompt into the main prompt
                 full_prompt = f"{prompt}. Please avoid: {negative_prompt}"
             else:
                 full_prompt = prompt
+                
+            print(f"Sending request to OpenAI DALL-E with prompt: {full_prompt[:100]}...")
             
-            response = openai.Image.create(
+            response = client.images.generate(
+                model="dall-e-3",
                 prompt=full_prompt,
-                n=num_images,
-                size=size  # OpenAI expects sizes like "1024x1024"
+                size=dalle_size,
+                quality="standard",
+                n=num_images
             )
             
             images = []
-            for data in response['data']:
-                image_url = data['url']
+            for data in response.data:
+                image_url = data.url
                 image_response = requests.get(image_url)
-                image = Image.open(io.BytesIO(image_response.content))
-                images.append(image)
+                if image_response.status_code == 200:
+                    image = Image.open(io.BytesIO(image_response.content))
+                    images.append(image)
             
+            print(f"Successfully generated {len(images)} images with DALL-E")
             return images
-            """
             
-            # For now, return placeholder images
-            return [self._create_placeholder_image(f"DALL-E: {prompt[:30]}...", size) 
-                   for _ in range(num_images)]
-                   
         except Exception as e:
             print(f"Exception in DALL-E generation: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
             return [self._create_placeholder_image(f"Error: {str(e)[:30]}...", size) 
                    for _ in range(num_images)]
     
-    def _generate_with_midjourney(
-        self, 
-        prompt: str, 
-        size: str, 
-        num_images: int
-    ) -> List[Image.Image]:
-        """
-        Generate images using Midjourney (Note: this is a placeholder as Midjourney doesn't have an official API).
-        """
-        # For demo purposes only - Midjourney doesn't have an official API
-        return [self._create_placeholder_image(f"Midjourney: {prompt[:30]}...", size) 
-               for _ in range(num_images)]
-    
     def _create_placeholder_image(self, text: str, size: str = "512x512") -> Image.Image:
-        """
-        Create a placeholder image with text for demonstration purposes.
-        """
+        """Create a placeholder image with error text."""
         try:
             width, height = map(int, size.split('x'))
         except ValueError:
             width, height = 512, 512
             
-        # Create a light gray image
+        # Create a blank image
         image = Image.new("RGB", (width, height), color=(240, 240, 240))
         
-        # Return the placeholder image
+        # Add text if PIL has ImageDraw
+        try:
+            from PIL import ImageDraw, ImageFont
+            draw = ImageDraw.Draw(image)
+            
+            # Use default font
+            try:
+                font = ImageFont.truetype("arial.ttf", 20)
+            except:
+                font = ImageFont.load_default()
+                
+            # Add text to indicate error
+            text_lines = [text[i:i+30] for i in range(0, len(text), 30)]
+            y_position = height // 2 - 10 * len(text_lines)
+            
+            for line in text_lines:
+                text_width = draw.textlength(line, font=font) if hasattr(draw, 'textlength') else 6 * len(line)
+                draw.text(
+                    ((width - text_width) // 2, y_position), 
+                    line, 
+                    fill=(0, 0, 0), 
+                    font=font
+                )
+                y_position += 30
+        except Exception as e:
+            print(f"Error creating text on placeholder: {e}")
+            
         return image
     
     def get_available_models(self) -> List[str]:
-        """
-        Returns a list of available text-to-image models.
-        """
-        return ["Stable Diffusion", "DALL-E", "Midjourney API"]
+        """Return list of available models based on API keys."""
+        models = []
+        if 'stability' in self.api_keys:
+            models.append("Stable Diffusion")
+        if 'openai' in self.api_keys:
+            models.append("DALL-E")
+        return models
     
     def get_available_sizes(self, model: str = None) -> List[str]:
-        """
-        Returns available image sizes, optionally filtered by model.
-        """
+        """Return available sizes for the specified model."""
         if model == "DALL-E":
             return ["256x256", "512x512", "1024x1024"]
         else:
             return ["512x512", "768x768", "1024x1024", "1024x1536"]
+
