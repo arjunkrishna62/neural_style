@@ -11,6 +11,7 @@ from streamlit_drawable_canvas import st_canvas
 import io
 from torchvision import transforms
 
+from typing import Optional, Dict, List
 
 
 from main import neural_style_transfer
@@ -58,11 +59,11 @@ def initialize_text2img_generator():
     """Initialize the Text-to-Image generator with Stability API key"""
     try:
         # Try to get API key from environment variables first
-        api_key = os.getenv('STABILITY_API_KEY')
-        #api_key = os.getenv('OPENAI_API_KEY')
+        api_key_stability = os.getenv('STABILITY_API_KEY')
+        api_key_openai = os.getenv('OPENAI_API_KEY')
         
         # If key is not in environment variables, get it from session state or user input
-        if not api_key:
+        if not api_key_stability:
             st.warning("Stability API key not found in environment variables. Please enter it below:")
             
             # Use session state to persist API key
@@ -70,25 +71,39 @@ def initialize_text2img_generator():
                 st.session_state.stability_api_key = ''
             
            
-            api_key = st.text_input(
+            api_key_stability = st.text_input(
                 "Enter Stability API Key:",
                 value=st.session_state.stability_api_key,
                 type="password",
                 key="stability_key_input"
             )
+
+            if 'openai_api_key' not in st.session_state:
+                st.session_state.openai_api_key = ''
             
+           
+            api_key_openai = st.text_input(
+                "Enter open API Key:",
+                value=st.session_state.openai_api_key,
+                type="password",
+                key="openai_key_input"
+            )
+            
+
             # Update session state
-            st.session_state.stability_api_key = api_key
+            st.session_state.stability_api_key = api_key_stability
+            st.session_state.openai_api_key = api_key_openai
         
        
-        if not api_key:
+        if not api_key_stability:
             st.error("Please provide a Stability API key to continue.")
             return None
             
         #st.write("Initializing generator with API key")
         
         # Update to only use Stability API
-        generator = TextToImageGenerator({'stability': api_key})
+        combined_api_keys = {'stability': api_key_stability, 'openai': api_key_openai}
+        generator = TextToImageGenerator(api_keys=combined_api_keys)
         return generator
     except Exception as e:
         st.error(f"Error initializing generator: {str(e)}")
@@ -372,7 +387,7 @@ def get_size_options(model_option):
     
     if model_option in ['stable-diffusion-xl-1024-v0-9', 'stable-diffusion-xl-1024-v1-0']:
         return [
-            "1024x1024",  # Default for SDXL
+            "1024x1024",  
             "1152x896",
             "1216x832",
             "1344x768",
@@ -579,68 +594,68 @@ if __name__ == "__main__":
         # Initialize generator
         generator = initialize_text2img_generator()
         
-        # Model selection
-        st.sidebar.subheader('Model')
-        txt2img_model = st.sidebar.selectbox(
-            'Select AI Model:',
-            [
-                'stable-diffusion-v1-5',
-                'stable-diffusion-xl-1024-v1-0',
-                'stable-diffusion-xl-1024-v0-9'
-            ],
-            key='txt2img_model'
-        )
+        # # Model selection
+        # st.sidebar.subheader('Model')
+        # txt2img_model = st.sidebar.selectbox(
+        #     'Select AI Model:',
+        #     [
+        #         'stable-diffusion-v1-5',
+        #         'stable-diffusion-xl-1024-v1-0',
+        #         'stable-diffusion-xl-1024-v0-9'
+        #     ],
+        #     key='txt2img_model'
+        # )
         
         # Get appropriate size options based on model
         size_options = get_size_options(st.session_state.txt2img_model)
             
         # Size selection with default that matches model requirements
-        txt2img_size = st.sidebar.selectbox(
-            'Select image size:',
-            size_options,
-            index=0,
-            key='txt2img_size_select'
-        )
-        st.sidebar.subheader('Generation Options')
-        num_images = st.sidebar.slider(
-            'Number of images:',
-            min_value=1,
-            max_value=4,
-            value=1,
-            key='txt2img_num_images'
-        )
+        # txt2img_size = st.sidebar.selectbox(
+        #     'Select image size:',
+        #     size_options,
+        #     index=0,
+        #     key='txt2img_size_select'
+        # )
+        # st.sidebar.subheader('Generation Options')
+        # num_images = st.sidebar.slider(
+        #     'Number of images:',
+        #     min_value=1,
+        #     max_value=4,
+        #     value=1,
+        #     key='txt2img_num_images'
+        # )
         
-        # Advanced options in expander
-        with st.sidebar.expander("Advanced Settings", expanded=False):
-            guidance_scale = st.slider(
-                "Guidance Scale:",
-                min_value=1.0,
-                max_value=20.0,
-                value=7.5,
-                step=0.5,
-                help="Higher values increase adherence to the prompt. Lower values allow more creativity.",
-                key='txt2img_guidance'
-            )
+        # # Advanced options in expander
+        # with st.sidebar.expander("Advanced Settings", expanded=False):
+        #     guidance_scale = st.slider(
+        #         "Guidance Scale:",
+        #         min_value=1.0,
+        #         max_value=20.0,
+        #         value=7.5,
+        #         step=0.5,
+        #         help="Higher values increase adherence to the prompt. Lower values allow more creativity.",
+        #         key='txt2img_guidance'
+        #     )
             
-            steps = st.slider(
-                "Generation Steps:",
-                min_value=10,
-                max_value=150,
-                value=30,
-                step=1,
-                help="More steps generally result in higher quality but take longer.",
-                key='txt2img_steps'
-            )
+        #     steps = st.slider(
+        #         "Generation Steps:",
+        #         min_value=10,
+        #         max_value=150,
+        #         value=30,
+        #         step=1,
+        #         help="More steps generally result in higher quality but take longer.",
+        #         key='txt2img_steps'
+        #     )
             
-            use_random_seed = st.checkbox("Use Random Seed", True, key='txt2img_use_random')
-            if not use_random_seed:
-                seed = st.number_input("Seed:", 0, 9999999, 42, key='txt2img_seed')
-            else:
-                seed = None
+        #     use_random_seed = st.checkbox("Use Random Seed", True, key='txt2img_use_random')
+        #     if not use_random_seed:
+        #         seed = st.number_input("Seed:", 0, 9999999, 42, key='txt2img_seed')
+        #     else:
+        #         seed = None
         
         # Save option
-        st.sidebar.subheader('Save Options')
-        st.session_state.save_txt2img_flag = st.sidebar.checkbox('Save generated images', key='txt2img_save')
+        # st.sidebar.subheader('Save Options')
+        # st.session_state.save_txt2img_flag = st.sidebar.checkbox('Save generated images', key='txt2img_save')
 
     # Show the page of the selected page:
     if app_mode == options[0]:  # About NST
@@ -817,98 +832,128 @@ if __name__ == "__main__":
     elif app_mode == options[4]:  # About Text-to-Image
         print_info_txt2img()
         
-    elif app_mode == options[5]:  # Generate from Text
+    elif app_mode == options[5]:  # Generate from prompt
         st.markdown("### Generate Images from Text Prompts")
         
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            # Text prompt input
-            st.subheader("Enter Your Prompt")
-            
-            prompt = st.text_area(
-                "Describe the image you want to generate:",
-                height=100,
-                key="txt2img_prompt_input",
-                placeholder="A serene landscape with mountains reflecting in a crystal clear lake at sunset, dramatic sky with vibrant colors..."
-            )
-            
-            # Negative prompt input
-            negative_prompt = st.text_area(
-                "Elements to avoid (negative prompt):",
-                height=70,
-                key="txt2img_negative_prompt",
-                placeholder="blurry, low quality, distorted, watermark, text, deformed..."
-                
-            )
+        # Initialize the generator with updated API key handling
+        # Initialize the generator with updated API key handling (corrected)
+        def initialize_text2img_generator():
+            """Initialize generator with session state API keys"""
+            try:
+                stability_key = st.session_state.get('stability_api_key', os.getenv('STABILITY_API_KEY', ''))
+                openai_key = st.session_state.get('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
 
-            st.subheader("Example Prompts")
-            example_prompts = [
-                "A futuristic city with flying cars and neon lights",
-                "A photorealistic portrait of a fantasy creature",
-                "A cozy cabin in a snowy forest with northern lights"
-            ]
-            
-            # Create buttons for examples
-            cols = st.columns(len(example_prompts))
-            for i, (col, ex_prompt) in enumerate(zip(cols, example_prompts)):
-                with col:
-                    if st.button(f"Example {i+1}", key=f"txt2img_example_{i}"):
-                        prompt = ex_prompt
-                        st.session_state.txt2img_prompt = ex_prompt
-                        st.rerun()
-           
-            generate_pressed = st.button(
-                "Generate Image", 
-                type="primary", 
-                key="txt2img_generate_button",
-                use_container_width=True
-            )
+                # Combine API keys into a SINGLE dictionary
+                combined_api_keys = {'stability': stability_key, 'openai': openai_key}
+
+                return TextToImageGenerator(combined_api_keys) # Pass the combined dictionary as ONE argument
+
+            except Exception as e:
+                st.error(f"Error initializing generator: {str(e)}")
+                return None
+        # def initialize_text2img_generator():
+        #     """Initialize generator with session state API keys"""
+        #     try:
+        #         stability_key = st.session_state.get('stability_api_key', os.getenv('STABILITY_API_KEY', ''))
+        #         openai_key = st.session_state.get('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
+        #         return TextToImageGenerator(
+        #             {'stability': stability_key},
+        #             {'openai': openai_key}
+        #         )
+        #     except Exception as e:
+        #         st.error(f"Error initializing generator: {str(e)}")
+        #         return None
+
+        if 'txt2img_generator' not in st.session_state:
+            st.session_state.txt2img_generator = initialize_text2img_generator()
         
-        with col2:
-            st.subheader("Generated Images")
-            image_placeholder = st.empty()
-            
-            # Process generation when button is pressed
-            if generate_pressed and prompt:
-                with st.spinner("Generating your images..."):
-                    try:
-                        # Initialize the generator if not already done
-                        if 'txt2img_generator' not in st.session_state:
-                            st.session_state.txt2img_generator = initialize_text2img_generator()
-                        
-                        generator = st.session_state.txt2img_generator
-                        
-                        # Generate images
-                        images = generator.generate_images(
-                            prompt=prompt,
-                            negative_prompt=negative_prompt,
-                            model=txt2img_model,
-                            size=txt2img_size,
-                            num_images=num_images,
-                            guidance_scale=guidance_scale,
-                            steps=steps,
-                            seed=seed
-                        )
-                        
-                        # Display images
-                        if images:
-                            display_generated_images(images, image_placeholder)
-                        else:
-                            st.error("Failed to generate images. Please try again.")
+        generator = st.session_state.txt2img_generator
+        
+        # Sidebar controls
+        st.sidebar.title('Text-to-Image Parameters')
+        
+        # Model selection
+        selected_model = st.sidebar.selectbox(
+            "AI Model",
+            ["Stable Diffusion", "DALL-E"],
+            index=0,
+            key='txt2img_model'
+        )
+        
+        # Dynamic API key handling
+        if selected_model == "Stable Diffusion":
+            if not generator.api_keys.get('stability'):
+                st.sidebar.text_input(
+                    "Stability API Key",
+                    type="password",
+                    key="stability_key_input",
+                    help="Get key from https://platform.stability.ai/"
+                )
+                if st.session_state.stability_key_input:
+                    st.session_state.stability_api_key = st.session_state.stability_key_input
+                    st.session_state.txt2img_generator = initialize_text2img_generator()
+                    st.rerun()
+        else:  # DALL-E
+            if not generator.api_keys.get('openai'):
+                st.sidebar.text_input(
+                    "OpenAI API Key",
+                    type="password",
+                    key="openai_key_input",
+                    help="Get key from https://platform.openai.com/"
+                )
+                if st.session_state.openai_key_input:
+                    st.session_state.openai_api_key = st.session_state.openai_key_input
+                    st.session_state.txt2img_generator = initialize_text2img_generator()
+                    st.rerun()
+
+        # Size selection
+        size_options = get_size_options(selected_model) if selected_model != "DALL-E" else ["1024x1024", "512x512", "256x256"]
+        size = st.sidebar.selectbox("Image Size", size_options, key='txt2img_size')
+        
+        # Generation parameters
+        num_images = st.sidebar.slider("Number of Images", 1, 4, 1, key='txt2img_num')
+        
+        if selected_model == "Stable Diffusion":
+            guidance = st.sidebar.slider("Guidance Scale", 1.0, 20.0, 7.5, key='txt2img_guidance')
+            steps = st.sidebar.slider("Steps", 10, 150, 50, key='txt2img_steps')
+        else:
+            guidance = None
+            steps = None
+        
+        seed = st.sidebar.number_input("Seed", value=42, key='txt2img_seed') if st.sidebar.checkbox("Custom Seed", False) else None
+        
+        # Main content
+        prompt = st.text_area("Prompt", height=100, placeholder="Describe the image you want to generate...")
+        negative_prompt = st.text_area("Negative Prompt", height=68, placeholder="What to exclude from the image...")
+        
+        if st.button("Generate"):
+            if not prompt:
+                st.warning("Please enter a prompt")
+            else:
+                try:
+                    images = generator.generate_images(
+                        prompt=prompt,
+                        negative_prompt=negative_prompt if negative_prompt else None,
+                        model=selected_model,
+                        size=size,
+                        num_images=num_images,
+                        guidance_scale=guidance,
+                        steps=steps,
+                        seed=seed
+                    )
+                    display_generated_images(images, st)
                     
-                    except Exception as e:
-                        st.error(f"An error occurred: {str(e)}")
-                        st.exception(e)
+                    if st.session_state.get('save_txt2img_flag', False):
+                            (images, selected_model)
                         
-                        # Debug API keys
-                        api_keys = {
-                        'stability': os.getenv('STABILITY_API_KEY'),
-                        'openai': os.getenv('OPENAI_API_KEY')
-                        }
+                except Exception as e:
+                    st.error(f"Generation failed: {str(e)}")
 
-                        st.write("API Keys status:")
-                        for key, value in api_keys.items():
-                            st.write(f"{key}: {'Present' if value else 'Missing'}")
-            elif generate_pressed:
-                st.warning("Please enter a prompt before generating images.")
+
+
+# if 'save_txt2img_flag' in st.session_state and st.session_state.save_txt2img_flag:
+#                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+#                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
+#                 pil_image.save(filename)
+#                 st.success(f"Image saved as {filename}")
+
