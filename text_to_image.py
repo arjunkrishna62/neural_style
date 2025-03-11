@@ -139,15 +139,24 @@ class TextToImageGenerator:
         try:
             client = OpenAI(api_key=api_key)
             
-            # Convert size to DALL-E format (e.g., "1024x1024")
-            size_map = {
-                "256x256": "256x256",
-                "512x512": "512x512", 
-                "1024x1024": "1024x1024",
-                "768x768": "1024x1024",  # Fallback to closest supported size
-                "1024x1536": "1024x1024"  # Fallback to closest supported size
-            }
-            dalle_size = size_map.get(size, "1024x1024")
+            # DALL-E 3 only supports these sizes
+            dalle3_sizes = ["1024x1024", "1024x1792", "1792x1024"]
+            
+            # DALL-E 2 only supports these sizes
+            dalle2_sizes = ["256x256", "512x512", "1024x1024"]
+            
+            # Determine which model and size to use
+            if size in dalle3_sizes:
+                model = "dall-e-3"
+                dalle_size = size
+            elif size in dalle2_sizes:
+                model = "dall-e-2"
+                dalle_size = size
+            else:
+                # Default to the closest supported size in DALL-E 3
+                model = "dall-e-3"
+                dalle_size = "1024x1024"
+                print(f"Warning: Size {size} is not supported by DALL-E. Defaulting to {dalle_size}")
             
             # For DALL-E, incorporate negative prompt if provided
             if negative_prompt:
@@ -155,25 +164,30 @@ class TextToImageGenerator:
             else:
                 full_prompt = prompt
                 
-            print(f"Sending request to OpenAI DALL-E with prompt: {full_prompt[:100]}...")
+            print(f"Sending request to OpenAI {model} with prompt: {full_prompt[:100]}...")
             
-            response = client.images.generate(
-                model="dall-e-3",
-                prompt=full_prompt,
-                size=dalle_size,
-                quality="standard",
-                n=num_images
-            )
+            # DALL-E 3 only supports 1 image per request
+            n_images = 1 if model == "dall-e-3" else min(num_images, 10)
             
             images = []
-            for data in response.data:
-                image_url = data.url
-                image_response = requests.get(image_url)
-                if image_response.status_code == 200:
-                    image = Image.open(io.BytesIO(image_response.content))
-                    images.append(image)
+            # Make multiple requests if more than one image is requested with DALL-E 3
+            for i in range(0, num_images, n_images):
+                response = client.images.generate(
+                    model=model,
+                    prompt=full_prompt,
+                    size=dalle_size,
+                    quality="standard",
+                    n=n_images
+                )
+                
+                for data in response.data:
+                    image_url = data.url
+                    image_response = requests.get(image_url)
+                    if image_response.status_code == 200:
+                        image = Image.open(io.BytesIO(image_response.content))
+                        images.append(image)
             
-            print(f"Successfully generated {len(images)} images with DALL-E")
+            print(f"Successfully generated {len(images)} images with {model}")
             return images
             
         except Exception as e:
@@ -234,7 +248,6 @@ class TextToImageGenerator:
     def get_available_sizes(self, model: str = None) -> List[str]:
         """Return available sizes for the specified model."""
         if model == "DALL-E":
-            return ["256x256", "512x512", "1024x1024"]
+            return ["1024x1024", "1024x1792", "1792x1024"]  # DALL-E 3 sizes
         else:
             return ["512x512", "768x768", "1024x1024", "1024x1536"]
-

@@ -54,50 +54,27 @@ def prepare_imgs(content_im, style_im, RGB=False):
     
     return content_im, style_im
 
-@st.cache_resource
 def initialize_text2img_generator():
-    """Initialize the Text-to-Image generator with Stability API key"""
+    """Initialize the Text-to-Image generator with API keys"""
     try:
         # Try to get API key from environment variables first
         api_key_stability = os.getenv('STABILITY_API_KEY')
         api_key_openai = os.getenv('OPENAI_API_KEY')
         
-        # If key is not in environment variables, get it from session state or user input
-        if not api_key_stability:
-            st.warning("Stability API key not found in environment variables. Please enter it below:")
-            
-            # Use session state to persist API key
-            if 'stability_api_key' not in st.session_state:
-                st.session_state.stability_api_key = ''
-            
-           
-            api_key_stability = st.text_input(
-                "Enter Stability API Key:",
-                value=st.session_state.stability_api_key,
-                type="password",
-                key="stability_key_input"
-            )
-
-            if 'openai_api_key' not in st.session_state:
-                st.session_state.openai_api_key = ''
-            
-           
-            api_key_openai = st.text_input(
-                "Enter open API Key:",
-                value=st.session_state.openai_api_key,
-                type="password",
-                key="openai_key_input"
-            )
-            
-
-            # Update session state
-            st.session_state.stability_api_key = api_key_stability
-            st.session_state.openai_api_key = api_key_openai
+        # If keys are not in environment variables, get them from session state
+        if 'stability_api_key' in st.session_state:
+            api_key_stability = st.session_state.stability_api_key
         
-       
-        if not api_key_stability:
-            st.error("Please provide a Stability API key to continue.")
-            return None
+        if 'openai_api_key' in st.session_state:
+            api_key_openai = st.session_state.openai_api_key
+        
+        # Combine API keys into a SINGLE dictionary
+        combined_api_keys = {'stability': api_key_stability, 'openai': api_key_openai}
+        
+        return TextToImageGenerator(combined_api_keys)  # Pass the combined dictionary as ONE argument
+    except Exception as e:
+        st.error(f"Error initializing generator: {str(e)}")
+        return None
             
         #st.write("Initializing generator with API key")
         
@@ -389,16 +366,16 @@ def get_size_options(model_option):
         return [
             "1024x1024",  
             "1152x896",
-            "1216x832",
+            "1152x896",
             "1344x768",
             "1536x640",
             "640x1536",
             "768x1344",
-            "832x1216",
+            "1152x896",
             "896x1152"
         ]
     else:
-        return ["512x512", "768x768", "1024x1024"]
+        return ["1152x896", "1152x896", "1024x1024","1152x896"]
 
 if __name__ == "__main__":
     
@@ -835,35 +812,7 @@ if __name__ == "__main__":
     elif app_mode == options[5]:  # Generate from prompt
         st.markdown("### Generate Images from Text Prompts")
         
-        # Initialize the generator with updated API key handling
-        # Initialize the generator with updated API key handling (corrected)
-        def initialize_text2img_generator():
-            """Initialize generator with session state API keys"""
-            try:
-                stability_key = st.session_state.get('stability_api_key', os.getenv('STABILITY_API_KEY', ''))
-                openai_key = st.session_state.get('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
-
-                # Combine API keys into a SINGLE dictionary
-                combined_api_keys = {'stability': stability_key, 'openai': openai_key}
-
-                return TextToImageGenerator(combined_api_keys) # Pass the combined dictionary as ONE argument
-
-            except Exception as e:
-                st.error(f"Error initializing generator: {str(e)}")
-                return None
-        # def initialize_text2img_generator():
-        #     """Initialize generator with session state API keys"""
-        #     try:
-        #         stability_key = st.session_state.get('stability_api_key', os.getenv('STABILITY_API_KEY', ''))
-        #         openai_key = st.session_state.get('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
-        #         return TextToImageGenerator(
-        #             {'stability': stability_key},
-        #             {'openai': openai_key}
-        #         )
-        #     except Exception as e:
-        #         st.error(f"Error initializing generator: {str(e)}")
-        #         return None
-
+        # Initialize the generator
         if 'txt2img_generator' not in st.session_state:
             st.session_state.txt2img_generator = initialize_text2img_generator()
         
@@ -906,8 +855,13 @@ if __name__ == "__main__":
                     st.session_state.txt2img_generator = initialize_text2img_generator()
                     st.rerun()
 
-        # Size selection
-        size_options = get_size_options(selected_model) if selected_model != "DALL-E" else ["1024x1024", "512x512", "256x256"]
+        # Size selection based on the updated model capabilities
+        if selected_model == "DALL-E":
+            # DALL-E 3 sizes
+            size_options = ["1024x1024", "1024x1792", "1792x1024"]
+        else:
+            size_options = get_size_options(selected_model)
+        
         size = st.sidebar.selectbox("Image Size", size_options, key='txt2img_size')
         
         # Generation parameters
@@ -931,29 +885,30 @@ if __name__ == "__main__":
                 st.warning("Please enter a prompt")
             else:
                 try:
-                    images = generator.generate_images(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt if negative_prompt else None,
-                        model=selected_model,
-                        size=size,
-                        num_images=num_images,
-                        guidance_scale=guidance,
-                        steps=steps,
-                        seed=seed
-                    )
-                    display_generated_images(images, st)
+                    with st.spinner(f"Generating images with {selected_model}..."):
+                        images = generator.generate_images(
+                            prompt=prompt,
+                            negative_prompt=negative_prompt if negative_prompt else None,
+                            model=selected_model,
+                            size=size,
+                            num_images=num_images,
+                            guidance_scale=guidance,
+                            steps=steps,
+                            seed=seed
+                        )
+                        display_generated_images(images, st)
                     
+                    # Fix for saving images
                     if st.session_state.get('save_txt2img_flag', False):
-                            (images, selected_model)
+                        save_generated_images(images, selected_model)
                         
                 except Exception as e:
                     st.error(f"Generation failed: {str(e)}")
 
 
-
-# if 'save_txt2img_flag' in st.session_state and st.session_state.save_txt2img_flag:
-#                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
-#                 pil_image.save(filename)
-#                 st.success(f"Image saved as {filename}")
+    # if 'save_txt2img_flag' in st.session_state and st.session_state.save_txt2img_flag:
+    #                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
+    #                 pil_image.save(filename)
+    #                 st.success(f"Image saved as {filename}")
 
