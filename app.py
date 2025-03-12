@@ -21,12 +21,6 @@ from using_cnn import StyleTransferCNN
 
 load_dotenv()
 
-# Import the Pixel2Turbo model
-p = "src/"
-sys.path.append(p)
-from src.pixel2turbo import Pix2Pix_Turbo
-
-
 
 
 @st.cache_data
@@ -114,46 +108,7 @@ def get_generator():
 generator = get_generator()
 
 
-@st.cache_resource
-def load_pixel2turbo_model(model_type):
-   
-    if model_type == "Edge to Image":
-        model = Pix2Pix_Turbo(pretrained_name="edge_to_image")
-    elif model_type == "Sketch to Image (Stochastic)":
-        model = Pix2Pix_Turbo(pretrained_name="sketch_to_image_stochastic")
-    else:
-        model = Pix2Pix_Turbo()  # Default initialization
-        
-    model.set_eval()  # Set model to evaluation mode
-    return model
 
-def process_pixel2turbo(model, input_image, prompt, randomness):
-    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Move model to appropriate device
-    model = model.to(device)
-    
-    # Convert PIL image to tensor
-    input_tensor = torch.from_numpy(input_image).float().to(device) / 127.5 - 1.0
-    input_tensor = input_tensor.permute(2, 0, 1).unsqueeze(0)
-    
-    # Process deterministically or with randomness
-    deterministic = randomness <= 0.0
-    
-    if deterministic:
-        output = model(input_tensor, prompt=prompt, deterministic=True)
-    else:
-        # Generate noise map for stochastic generation
-        shape = input_tensor.shape
-        noise = torch.randn((shape[0], 4, shape[2]//8, shape[3]//8), device=device)
-        output = model(input_tensor, prompt=prompt, deterministic=False, r=1.0-randomness, noise_map=noise)
-    
-    # Convert output tensor to numpy array
-    output_image = output.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    output_image = ((output_image + 1.0) * 127.5).astype(np.uint8)
-    
-    return output_image
 
 def display_generated_images(images, container):
     """Display generated images in the provided container."""
@@ -261,31 +216,7 @@ def print_info_NST():
             (in the same folder where the app.py file of this project is located)
             """)
 
-def print_info_pixel2turbo():
-    
-    st.markdown("""
-                ## What is Pixel2Turbo?
-                **Pixel2Turbo** is a fast image-to-image translation model based on Stable Diffusion Turbo. 
-                It allows you to transform sketches, edges, or other image inputs into detailed images 
-                guided by text prompts.
-                
-                The model supports two primary modes:
-                - **Edge to Image**: Transforms edge drawings into photorealistic images
-                - **Sketch to Image (Stochastic)**: Converts sketches to images with randomized variations
-                
-                Unlike Neural Style Transfer, Pixel2Turbo uses a pre-trained diffusion model with 
-                text guidance to generate images in a single forward pass, making it very fast.
-                """)
-                
-    # Show exemplar images (placeholders - you would need to replace these with actual examples)
-    st.markdown("""
-                ### Example:
-                Below is an example of sketch-to-image transformation. The left shows the input sketch,
-                and the right shows the generated image.
-                """)
-                
-    # You'd need example images for Pixel2Turbo - this is just placeholder text
-    st.info("Upload an image and try Pixel2Turbo to see the results!")
+
 
 def print_info_txt2img():
     """Print basic information about Text-to-Image generation within the app."""
@@ -533,35 +464,7 @@ if __name__ == "__main__":
             #             st.error(f"An error occurred: {str(e)}")
             #             st.exception(e)
             
-    elif app_mode in ['About Pixel2Turbo', 'Try Pixel2Turbo']:
-        st.sidebar.title('Pixel2Turbo Parameters')
-        st.sidebar.subheader('Model Type')
-        model_type = st.sidebar.selectbox(
-            'Select model type:',
-            ['Edge to Image', 'Sketch to Image (Stochastic)']
-        )
-        
-        # Text prompt for guiding the generation
-        st.sidebar.subheader('Text Prompt')
-        prompt = st.sidebar.text_input("Enter your text prompt:", "A beautiful landscape painting")
-        
-        # Randomness slider (only for the stochastic model)
-        if model_type == 'Sketch to Image (Stochastic)':
-            st.sidebar.subheader('Randomness')
-            randomness = st.sidebar.slider(
-                'Adjust randomness level:',
-                min_value=0.0,
-                max_value=1.0,
-                value=0.3,
-                step=0.05,
-                help="Higher values increase variation in generated images"
-            )
-        else:
-            randomness = 0.0
-        
-        # Save option
-        st.sidebar.subheader('Save generated image')
-        save_p2t_flag = st.sidebar.checkbox('Save result')
+   
 
      
     # Text-to-Image parameters
@@ -712,100 +615,7 @@ if __name__ == "__main__":
             # res_im_ph.image(result_im, channels="BGR")
             bt_ph.markdown("This is the resulting **stylized image**!")
             
-    elif app_mode == options[2]:  # About Pixel2Turbo
-        print_info_pixel2turbo()
-        
-    elif app_mode == options[3]:  # Run Pixel2Turbo
-        st.markdown("### Generate Images with Pixel2Turbo")
-        
-        # Add model type selection in sidebar
-        st.sidebar.title('Pixel2Turbo Parameters')
-        model_type = st.sidebar.selectbox(
-            'Select model type:',
-            ['Edge to Image', 'Sketch to Image (Stochastic)'],
-            key='pixel2turbo_model'
-        )
-        
-        # Text prompt input
-        prompt = st.text_input(
-            "Enter your text prompt:",
-            "A beautiful landscape painting",
-            help="Describe the image you want to generate",
-            key='pixel2turbo_prompt'
-        )
-        
-        # Randomness slider (only for stochastic model)
-        randomness = 0.0
-        if model_type == 'Sketch to Image (Stochastic)':
-            randomness = st.sidebar.slider(
-                'Adjust randomness level:',
-                min_value=0.0,
-                max_value=1.0,
-                value=0.3,
-                step=0.05,
-                help="Higher values increase variation in generated images",
-                key='pixel2turbo_randomness'
-            )
-        
-        # Save option
-        save_p2t_flag = st.sidebar.checkbox('Save result', key='pixel2turbo_save')
-        
-        # File uploader for the input image
-        im_types = ["png", "jpg", "jpeg"]
-        file_input = st.file_uploader(
-            "Choose Input Image", 
-            type=im_types,
-            key="pixel2turbo_uploader"
-        )
-        
-        # Display the input image if uploaded
-        if file_input:
-            input_image = np.array(Image.open(file_input))
-            st.image(input_image, caption="Input Image", use_container_width=True)
-            
-            # Resize image if needed (SD models typically work with 512x512)
-            h, w = input_image.shape[:2]
-            ratio = min(512/h, 512/w)
-            if ratio < 1:
-                new_size = (int(w*ratio), int(h*ratio))
-                input_image = cv2.resize(input_image, new_size, interpolation=cv2.INTER_AREA)
-                st.info(f"Image resized to {new_size[0]}x{new_size[1]} for processing")
-            
-            # Button to start generation
-            start_p2t_flag = st.button(
-                "Generate Image", 
-                help="Start the Pixel2Turbo generation process",
-                key='pixel2turbo_generate'
-            )
-            bt_p2t_ph = st.empty()  # Message placeholder
-            
-            if start_p2t_flag:
-                bt_p2t_ph.markdown("Generating image with Pixel2Turbo...")
-                
-                try:
-                    # Load the model
-                    model = load_pixel2turbo_model(model_type)
-                    
-                    # Process the image with the prompt
-                    output_image = process_pixel2turbo(model, input_image, prompt, randomness)
-                    
-                    # Show the result
-                    st.image(output_image, caption="Generated Image", use_container_width=True)
-                    
-                    # Save the result if requested
-                    if save_p2t_flag:
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        filename = f"pixel2turbo_output_{timestamp}.jpg"
-                        Image.fromarray(output_image).save(filename)
-                        st.success(f"Image saved as {filename}")
-                    
-                    bt_p2t_ph.markdown("Image generation complete!")
-                    
-                except Exception as e:
-                    bt_p2t_ph.error(f"Error during image generation: {str(e)}")
-                    st.exception(e)
-        else:
-            st.info("Please upload an image to begin")
+    
     elif app_mode == options[4]:  # About Text-to-Image
         print_info_txt2img()
         
