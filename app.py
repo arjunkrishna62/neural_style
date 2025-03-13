@@ -316,7 +316,7 @@ if __name__ == "__main__":
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST', 'About Pix2img', 'Try Pixel2img', 
+            options = ['About NST', 'Try NST', 
                       'About Text-to-Image', 'Generate from prompt']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
