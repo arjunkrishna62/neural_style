@@ -7,20 +7,27 @@ from PIL import Image
 import sys
 from dotenv import load_dotenv
 from datetime import datetime
-from streamlit_drawable_canvas import st_canvas
 import io
 from torchvision import transforms
 
+
 from typing import Optional, Dict, List
+
+from laaca_protection.protect_style import StyleProtector
+from protect_style import protect_style_image
+
 
 
 from main import neural_style_transfer
 from text_to_image import TextToImageGenerator
-from src.pixel2turbo import Pix2Pix_Turbo
+
 from using_cnn import StyleTransferCNN
 
 load_dotenv()
 
+@st.cache_resource
+def get_style_protector():
+    return StyleProtector(device='cuda' if torch.cuda.is_available() else 'cpu')
 
 
 @st.cache_data
@@ -216,6 +223,31 @@ def print_info_NST():
             (in the same folder where the app.py file of this project is located)
             """)
 
+def print_info_style_protection():
+    """Print information about LAACA Style Protection"""
+    st.markdown("""
+                ## What is LAACA Style Protection?
+                
+                **LAACA** (Latent Adversarial Autoencoder for Copyright Assurance) is a technique designed to protect the style of an image from being copied by neural style transfer algorithms. It works by:
+                
+                1. Adding subtle perturbations to the style image
+                2. These perturbations are invisible to humans but disrupt the style extraction process
+                3. When a protected style image is used in style transfer, the resulting stylized image will show visible artifacts
+                
+                This technology helps artists and creators protect their unique artistic styles from unauthorized copying or mimicry using AI tools.
+                """)
+    
+    st.markdown("""
+                ### How to use Style Protection
+                
+                You can protect your style images in two ways:
+                
+                1. **In the "Try NST" mode**: Enable the Style Protection option in the sidebar when performing style transfer
+                
+                2. **In the "Style Protection Demo" mode**: Upload a style image and apply protection to see how it works
+                
+                The protection strength can be adjusted to balance between protection effectiveness and image quality.
+                """)
 
 
 def print_info_txt2img():
@@ -313,11 +345,11 @@ if __name__ == "__main__":
     
     st.title('Optmized NST')
     
+    
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST', 
-                      'About Text-to-Image', 'Generate from prompt']
+            options = ['About NST', 'Try NST','About Style Protection','Style Protection Demo', 'About Text-to-Image', 'Generate from prompt', 'Style Protection Demo']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
    
@@ -346,22 +378,6 @@ if __name__ == "__main__":
             st.sidebar.subheader('Save or not the stylized image')
             save_flag = st.sidebar.checkbox('Save result', key='save_vgg')
             
-            # # Configuration for VGG models
-            # cfg = {
-            #     'output_img_path': os.path.join(os.path.dirname(__file__), "app_stylized_image.jpg"),
-            #     'style_img': None,  # Will be set when images are uploaded
-            #     'content_img': None,  # Will be set when images are uploaded
-            #     'content_weight': cweight,
-            #     'style_weight': sweight,
-            #     'tv_weight': vweight,
-            #     'optimizer': 'lbfgs',
-            #     'model': model_type.lower(),  # 'vgg19' or 'vgg16'
-            #     'init_method': 'random',
-            #     'running_app': True,
-            #     'save_flag': save_flag,
-            #     'niter': niter
-            # }
-        
         elif model_type == "CNN":
             st.sidebar.subheader("Model Parameters")
              
@@ -375,173 +391,24 @@ if __name__ == "__main__":
            
             st.sidebar.subheader('Save or not the stylized image')
             save_flag = st.sidebar.checkbox('Save result', key = 'save_cnn')
-          
-            
-            
-        # st.markdown("### Upload the pair of images to use")        
-        # col1, col2 = st.columns(2)
-        # im_types = ["png", "jpg", "jpeg"]
         
-        # # Create file uploaders in a two column layout
-        # with col1:
-        #     file_c = st.file_uploader("Choose CONTENT Image", 
-        #                             type=im_types,
-        #                             key="nst_content_uploader")
-        #     imc_ph = st.empty()            
-        # with col2: 
-        #     file_s = st.file_uploader("Choose STYLE Image", 
-        #                             type=im_types,
-        #                             key="nst_style_uploader")
-        #     ims_ph = st.empty()
+        # Add Style Protection controls to sidebar
+        with st.sidebar.expander("Style Protection (LAACA)", expanded=False):
+            use_protection = st.checkbox(
+                "Enable Style Protection", 
+                value=False,
+                help="Apply LAACA protection to the style image"
+            )
+            protection_strength = st.slider(
+                "Protection Strength",
+                min_value=0.1,
+                max_value=1.0,
+                value=0.5,
+                step=0.1,
+                help="Higher values provide stronger protection but may affect image quality"
+            )
+            st.info("Style protection prevents unwanted style copying by adding invisible perturbations to the style image.")
         
-        # # If both images have been uploaded then preprocess and show them
-        # if all([file_s, file_c]):
-        #     # Preprocess
-        #     im_c = np.array(Image.open(file_c))
-        #     im_s = np.array(Image.open(file_s))
-        #     im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
-            
-        #     # Show images
-        #     imc_ph.image(im_c, use_column_width=True)
-        #     ims_ph.image(im_s, use_column_width=True)
-
-            # # Update VGG configuration with images if using VGG
-            # if model_type in ["VGG-19", "VGG-16"]:
-            #     cfg['content_img'] = im_c
-            #     cfg['style_img'] = im_s
-            # elif model_type == "CNN":
-            #     # Prepare tensors for CNN model
-            #     transform = transforms.Compose([
-            #         transforms.ToTensor(),
-            #         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-            #                           std=[0.229, 0.224, 0.225])
-            #     ])
-            #     content_tensor = transform(Image.fromarray(im_c)).unsqueeze(0)
-            #     style_tensor = transform(Image.fromarray(im_s)).unsqueeze(0)
-            
-            # st.markdown("### When ready, START the image generation!")
-            
-            # # Button for starting the stylized image
-            # start_flag = st.button("START", help="Start the style transfer process")
-            # bt_ph = st.empty()
-        
-            # if start_flag:
-            #     if not all([file_s, file_c]):
-            #         bt_ph.markdown("You need to **upload the images** first! :)")
-            #     else:
-            #         bt_ph.markdown(f"Processing using {model_type}...")
-                    
-            #         # Create progress bar
-            #         progress = st.progress(0.)
-            #         res_im_ph = st.empty()
-                    
-            #         try:
-            #             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                        
-            #             if model_type in ["VGG-19", "VGG-16"]:
-            #                 # Add progress bar and result placeholder to config
-            #                 cfg['res_im_ph'] = res_im_ph
-            #                 cfg['st_bar'] = progress
-            #                 result_im = neural_style_transfer(cfg, device)
-            #             else:  # CNN model
-            #                 result_im = neural_style_transfer_cnn(content_tensor, style_tensor, device)
-                        
-            #             if result_im is not None:
-            #                 res_im_ph.image(result_im)
-            #                 bt_ph.markdown("Style transfer complete!")
-                            
-            #                 # Save if requested
-            #                 if save_flag:
-            #                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #                     filename = f"nst_{model_type.lower()}_{timestamp}.jpg"
-            #                     if isinstance(result_im, np.ndarray):
-            #                         Image.fromarray(result_im).save(filename)
-            #                     else:
-            #                         result_im.save(filename)
-            #                     st.success(f"Image saved as {filename}")
-                    
-            #         except Exception as e:
-            #             st.error(f"An error occurred: {str(e)}")
-            #             st.exception(e)
-            
-   
-
-     
-    # Text-to-Image parameters
-    elif app_mode in ['Generate from prompt']:
-        st.sidebar.title('Text-to-Image Parameters')
-        
-        # Initialize generator
-        generator = initialize_text2img_generator()
-        
-        # # Model selection
-        # st.sidebar.subheader('Model')
-        # txt2img_model = st.sidebar.selectbox(
-        #     'Select AI Model:',
-        #     [
-        #         'stable-diffusion-v1-5',
-        #         'stable-diffusion-xl-1024-v1-0',
-        #         'stable-diffusion-xl-1024-v0-9'
-        #     ],
-        #     key='txt2img_model'
-        # )
-        
-        # Get appropriate size options based on model
-        size_options = get_size_options(st.session_state.txt2img_model)
-            
-        # Size selection with default that matches model requirements
-        # txt2img_size = st.sidebar.selectbox(
-        #     'Select image size:',
-        #     size_options,
-        #     index=0,
-        #     key='txt2img_size_select'
-        # )
-        # st.sidebar.subheader('Generation Options')
-        # num_images = st.sidebar.slider(
-        #     'Number of images:',
-        #     min_value=1,
-        #     max_value=4,
-        #     value=1,
-        #     key='txt2img_num_images'
-        # )
-        
-        # # Advanced options in expander
-        # with st.sidebar.expander("Advanced Settings", expanded=False):
-        #     guidance_scale = st.slider(
-        #         "Guidance Scale:",
-        #         min_value=1.0,
-        #         max_value=20.0,
-        #         value=7.5,
-        #         step=0.5,
-        #         help="Higher values increase adherence to the prompt. Lower values allow more creativity.",
-        #         key='txt2img_guidance'
-        #     )
-            
-        #     steps = st.slider(
-        #         "Generation Steps:",
-        #         min_value=10,
-        #         max_value=150,
-        #         value=30,
-        #         step=1,
-        #         help="More steps generally result in higher quality but take longer.",
-        #         key='txt2img_steps'
-        #     )
-            
-        #     use_random_seed = st.checkbox("Use Random Seed", True, key='txt2img_use_random')
-        #     if not use_random_seed:
-        #         seed = st.number_input("Seed:", 0, 9999999, 42, key='txt2img_seed')
-        #     else:
-        #         seed = None
-        
-        # Save option
-        # st.sidebar.subheader('Save Options')
-        # st.session_state.save_txt2img_flag = st.sidebar.checkbox('Save generated images', key='txt2img_save')
-
-    # Show the page of the selected page:
-    if app_mode == options[0]:  # About NST
-        print_info_NST()
-        
-    elif app_mode == options[1]:  # Run NST
         st.markdown("### Upload the pair of images to use")        
         col1, col2 = st.columns(2)
         im_types = ["png", "jpg", "jpeg"]
@@ -589,6 +456,21 @@ if __name__ == "__main__":
             progress = st.progress(0.)
             # Create place-holder for the stylized image:
             res_im_ph = st.empty()
+            
+            # Apply style protection if enabled
+            if use_protection:
+                try:
+                    st.info("Applying LAACA style protection...")
+                    # Convert numpy array to PIL image for protection
+                    style_pil = Image.fromarray(im_s)
+                    # Apply protection using the imported function
+                    protected_style = protect_style_image(style_pil, strength=protection_strength)
+                    # Convert back to numpy array
+                    im_s = np.array(protected_style)
+                    st.success("Style protection applied successfully!")
+                except Exception as e:
+                    st.error(f"Error applying style protection: {e}")
+            
             # config the NST function:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             # parent directory of this file:
@@ -614,12 +496,87 @@ if __name__ == "__main__":
             result_im = neural_style_transfer(cfg, device)
             # res_im_ph.image(result_im, channels="BGR")
             bt_ph.markdown("This is the resulting **stylized image**!")
-            
     
-    elif app_mode == options[4]:  # About Text-to-Image
+    elif app_mode == "About Style Protection":
+        print_info_style_protection()
+        
+    elif app_mode == "Style Protection Demo":
+        st.markdown("## Style Protection Demo")
+        
+        st.markdown("""
+        This demonstration shows how LAACA protection works to prevent style copying.
+        Upload a style image and apply protection to see the differences.
+        """)
+        
+        # Create file uploader for style image
+        im_types = ["png", "jpg", "jpeg"]
+        file_style = st.file_uploader("Upload Style Image", type=im_types, key="style_protection_uploader")
+        
+        # Control parameters
+        col1, col2 = st.columns(2)
+        with col1:
+            protection_strength = st.slider(
+                "Protection Strength",
+                min_value=0.1,
+                max_value=1.0,
+                value=0.5,
+                step=0.1,
+                help="Higher values provide stronger protection but may affect visual quality"
+            )
+        
+        if file_style:
+            # Load and display original image
+            original_image = Image.open(file_style)
+            
+            # Create two columns for side-by-side comparison
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Original Style Image")
+                st.image(original_image, use_container_width=True)
+            
+            # Apply protection
+            with st.spinner("Applying protection..."):
+                try:
+                    protected_image = protect_style_image(original_image, strength=protection_strength)
+                    
+                    with col2:
+                        st.subheader("Protected Style Image")
+                        st.image(protected_image, use_container_width=True)
+                    
+                    # Add explanation text
+                    st.markdown("""
+                    ### How the Protection Works
+                    
+                    The protected image contains imperceptible perturbations that will disrupt style transfer algorithms when 
+                    someone attempts to copy your style. To humans, the images look nearly identical, but neural networks will
+                    struggle to extract the style features correctly.
+                    """)
+                    
+                    # Provide download option for protected image
+                    buf = io.BytesIO()
+                    protected_image.save(buf, format="PNG")
+                    byte_im = buf.getvalue()
+                    
+                    st.download_button(
+                        label="Download Protected Image",
+                        data=byte_im,
+                        file_name="protected_style_image.png",
+                        mime="image/png"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Error applying protection: {str(e)}")
+        else:
+            st.info("Please upload a style image to continue")
+    
+    elif app_mode == options[0]:  # About NST
+        print_info_NST()
+    
+    elif app_mode == "About Text-to-Image":  # About Text-to-Image
         print_info_txt2img()
         
-    elif app_mode == options[5]:  # Generate from prompt
+    elif app_mode == "Generate from prompt":  # Generate from prompt
         st.markdown("### Generate Images from Text Prompts")
         
         # Initialize the generator
@@ -714,11 +671,3 @@ if __name__ == "__main__":
                         
                 except Exception as e:
                     st.error(f"Generation failed: {str(e)}")
-
-
-    # if 'save_txt2img_flag' in st.session_state and st.session_state.save_txt2img_flag:
-    #                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
-    #                 pil_image.save(filename)
-    #                 st.success(f"Image saved as {filename}")
-
