@@ -14,7 +14,7 @@ from torchvision import transforms
 from typing import Optional, Dict, List
 
 from laaca_protection.protect_style import StyleProtector
-from protect_style import protect_style_image
+
 
 
 
@@ -24,6 +24,32 @@ from text_to_image import TextToImageGenerator
 from using_cnn import StyleTransferCNN
 
 load_dotenv()
+
+# protector = StyleProtector()
+# # protected_image = protector.protect_style_image()
+
+# # Example usage (after training)
+# transform = transforms.Compose([
+#     transforms.Resize((256, 256)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+# ])
+
+# # Load and preprocess an image
+# image = Image.open("data/style-images/2reIEHS.jpg")
+# input_tensor = transform(image).unsqueeze(0)  # Add batch dimension
+
+# # Protect the image
+# protected_tensor = protector.protect_image(input_tensor)
+
+# # Convert back to image (denormalize and convert to PIL)
+# denormalize = transforms.Normalize(
+#     mean=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
+#     std=[1/0.229, 1/0.224, 1/0.225]
+# )
+# protected_tensor = denormalize(protected_tensor.squeeze())
+# protected_image = transforms.ToPILImage()(protected_tensor.clamp(0, 1))
+# protected_image.save("protected_image.jpg")
 
 @st.cache_resource
 def get_style_protector():
