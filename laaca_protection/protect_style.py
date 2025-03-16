@@ -13,6 +13,9 @@ from .utils import gram_matrix, normalize_batch
 from .train_eps import compute_content_loss, compute_style_loss
 
 class StyleProtector:
+    def __init__(self):
+        self.eps = 0.05
+
     def __init__(self, device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
         self.vgg = VGG().to(device)
@@ -32,7 +35,7 @@ class StyleProtector:
         self.eps = 0.05  # Epsilon for perturbation strength
         
     def preprocess_image(self, image):
-        """Convert PIL image to tensor and normalize."""
+       
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image.astype('uint8'))
         
@@ -46,72 +49,57 @@ class StyleProtector:
             image = self.trans(image).unsqueeze(0).to(self.device)
         
         return image
-    
-    def protect_style_image(self, style_image, num_steps=300, return_tensor=False):
-        """
-        Apply LAACA protection to a style image.
+    def protect_style_image(self, style_image, num_steps=100, strength=0.5, progress_callback=None):
+        """Process PIL Image directly with Streamlit integration"""
+        # Convert PIL to tensor
+        style_tensor = self.preprocess_image(style_image)
         
-        Args:
-            style_image: PIL Image or numpy array or tensor
-            num_steps: Number of optimization steps
-            return_tensor: If True, return torch tensor, otherwise return numpy array
-            
-        Returns:
-            Protected style image
-        """
-        # Preprocess style image
-        if not torch.is_tensor(style_image):
-            style_tensor = self.preprocess_image(style_image)
-        else:
-            style_tensor = style_image.to(self.device)
+        effective_eps = self.eps * strength * 2  
         
-        # Extract style features
-        style_features = self.vgg(style_tensor)
-        style_gram = [gram_matrix(f) for f in style_features]
+        # Extract style features BEFORE optimization loop
+        with torch.no_grad():
+            style_features = self.vgg(style_tensor)  # This was missing!
+            style_gram = [gram_matrix(f) for f in style_features]
         
-        # Initialize random noise for perturbation
+        # Initialize perturbation
         pert = torch.zeros_like(style_tensor, requires_grad=True)
         optimizer = optim.Adam([pert], lr=0.01)
         
-        # Optimization loop to find adversarial perturbation
+        # Optimization loop
         for step in range(num_steps):
             optimizer.zero_grad()
             
             # Apply perturbation
-            perturbed_style = style_tensor + self.eps * torch.tanh(pert)
+            perturbed_style = style_tensor + self.eps * strength * torch.tanh(pert)
             perturbed_features = self.vgg(perturbed_style)
             
-            # Compute style loss
+            # Compute style loss using precomputed style_gram
             perturbed_gram = [gram_matrix(f) for f in perturbed_features]
             style_loss = 0
             for pg, sg in zip(perturbed_gram, style_gram):
                 style_loss += torch.mean((pg - sg) ** 2)
             
-            # We want to maximize the style loss (find adversarial example)
-            loss = -style_loss
-            loss.backward()
+            (-style_loss).backward()
             optimizer.step()
             
-            if step % 50 == 0:
-                print(f"Step {step}/{num_steps}, Loss: {loss.item()}")
-        
-        # Final perturbed style image
+            # Streamlit progress updates
+            if progress_callback and step % 10 == 0:
+                progress_callback((step+1)/num_steps, f"Step {step+1}/{num_steps}")
+
+        # Final protected image
         with torch.no_grad():
-            protected_style = style_tensor + self.eps * torch.tanh(pert)
+            protected_tensor = style_tensor + effective_eps * torch.tanh(pert)
         
-        # Convert to displayable format
-        if return_tensor:
-            return protected_style
-        
-        # Denormalize and convert to numpy
-        protected_style = protected_style[0].cpu()
-        protected_style = protected_style * torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1) + \
-                         torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-        protected_style = protected_style.clamp(0, 1).numpy()
-        protected_style = np.transpose(protected_style, (1, 2, 0)) * 255.0
-        
-        return protected_style.astype(np.uint8)
-    
+        # Convert to PIL Image for Streamlit
+        return self.tensor_to_pil(protected_tensor)
+
+    def tensor_to_pil(self, tensor):
+        """Convert protected tensor to PIL Image"""
+        tensor = tensor.squeeze(0).cpu()
+        tensor = tensor * torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1) + \
+                torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        tensor = tensor.clamp(0, 1).permute(1, 2, 0).numpy()
+        return Image.fromarray((tensor * 255).astype(np.uint8))
     def save_protected_image(self, style_image, output_path):
         """Save protected style image to disk."""
         protected = self.protect_style_image(style_image, return_tensor=True)
@@ -119,7 +107,7 @@ class StyleProtector:
         # Denormalize
         protected = protected[0].cpu()
         protected = protected * torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1) + \
-                   torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
         protected = protected.clamp(0, 1)
         
         save_image(protected, output_path)
