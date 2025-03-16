@@ -25,31 +25,7 @@ from using_cnn import StyleTransferCNN
 
 load_dotenv()
 
-# protector = StyleProtector()
-# # protected_image = protector.protect_style_image()
 
-# # Example usage (after training)
-# transform = transforms.Compose([
-#     transforms.Resize((256, 256)),
-#     transforms.ToTensor(),
-#     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-# ])
-
-# # Load and preprocess an image
-# image = Image.open("data/style-images/2reIEHS.jpg")
-# input_tensor = transform(image).unsqueeze(0)  # Add batch dimension
-
-# # Protect the image
-# protected_tensor = protector.protect_image(input_tensor)
-
-# # Convert back to image (denormalize and convert to PIL)
-# denormalize = transforms.Normalize(
-#     mean=[-0.485/0.229, -0.456/0.224, -0.406/0.225],
-#     std=[1/0.229, 1/0.224, 1/0.225]
-# )
-# protected_tensor = denormalize(protected_tensor.squeeze())
-# protected_image = transforms.ToPILImage()(protected_tensor.clamp(0, 1))
-# protected_image.save("protected_image.jpg")
 
 @st.cache_resource
 def get_style_protector():
@@ -458,6 +434,8 @@ if __name__ == "__main__":
             im_c = np.array(Image.open(file_c))
             im_s = np.array(Image.open(file_s))
             im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
+            content_pil = Image.open(file_c)
+            style_pil = Image.open(file_s)
             
             # Show images:
             imc_ph.image(im_c, use_container_width=True)
@@ -485,17 +463,28 @@ if __name__ == "__main__":
             
             # Apply style protection if enabled
             if use_protection:
-                try:
-                    st.info("Applying LAACA style protection...")
-                    # Convert numpy array to PIL image for protection
-                    style_pil = Image.fromarray(im_s)
-                    # Apply protection using the imported function
-                    protected_style = protect_style_image(style_pil, strength=protection_strength)
-                    # Convert back to numpy array
-                    im_s = np.array(protected_style)
-                    st.success("Style protection applied successfully!")
-                except Exception as e:
-                    st.error(f"Error applying style protection: {e}")
+                with st.spinner("Applying style protection..."):
+                    try:
+                        protector = get_style_protector()  # This should be cached and device-aware
+                        style_pil = Image.open(file_s)  # Get PIL image directly from uploader
+                        
+                        # Apply protection with device-aware processing
+                        protected_style = protector.protect_style_image(
+                            style_pil,
+                            strength=protection_strength,
+                            num_steps=100
+                        )
+                        
+                        # Convert to numpy array and ensure BGR format
+                        im_s = np.array(protected_style)
+                        im_s = cv2.cvtColor(im_s, cv2.COLOR_RGB2BGR)  # PIL uses RGB, convert to BGR for OpenCV
+                        
+                    except Exception as e:
+                        st.error(f"Style protection failed: {str(e)}")
+                        st.stop()  # Use st.stop() instead of return in Streamlit context
+
+                # Update the style image display
+                ims_ph.image(im_s, use_container_width=True, caption="Protected Style Image")
             
             # config the NST function:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
