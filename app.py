@@ -25,6 +25,11 @@ from using_cnn import StyleTransferCNN
 
 load_dotenv()
 
+@st.cache_resource
+def get_protector():
+    return StyleProtector()
+
+protector = get_protector()
 
 
 @st.cache_resource
@@ -552,13 +557,12 @@ if __name__ == "__main__":
             
             # Apply protection
             with st.spinner("Applying protection..."):
-                try:
-                    protected_image = protect_style_image(original_image, strength=protection_strength)
-                    
-                    with col2:
-                        st.subheader("Protected Style Image")
-                        st.image(protected_image, use_container_width=True)
-                    
+                    protected_image = protector.protect_style_image(
+                        style_image=original_image,
+                        num_steps=200,
+                        strength=0.8,
+                        progress_callback=lambda p, msg: st.progress(p, text=msg))
+    
                     # Add explanation text
                     st.markdown("""
                     ### How the Protection Works
@@ -580,8 +584,8 @@ if __name__ == "__main__":
                         mime="image/png"
                     )
                     
-                except Exception as e:
-                    st.error(f"Error applying protection: {str(e)}")
+                # except Exception as e:
+                #     st.error(f"Error applying protection: {str(e)}")
         else:
             st.info("Please upload a style image to continue")
     
