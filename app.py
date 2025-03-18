@@ -1,4 +1,12 @@
 import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.extend([
+    PROJECT_ROOT,
+    os.path.join(PROJECT_ROOT, 'protection')
+])
+
 import streamlit as st
 import torch
 import numpy as np
@@ -20,6 +28,8 @@ from laaca_protection.protect_style import StyleProtector
 
 from main import neural_style_transfer
 from text_to_image import TextToImageGenerator
+from protection.protection_analysis import analyze_protection
+from protection.protection_views import protection_comparison_view
 
 from using_cnn import StyleTransferCNN
 
@@ -356,7 +366,7 @@ if __name__ == "__main__":
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST','About Style Protection','Style Protection Demo', 'About Text-to-Image', 'Generate from prompt', 'Style Protection Demo']
+            options = ['About NST', 'Try NST','About Style Protection','Style Protection Demo', 'About Text-to-Image', 'Generate from prompt']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
    
@@ -543,6 +553,7 @@ if __name__ == "__main__":
                 step=0.1,
                 help="Higher values provide stronger protection but may affect visual quality"
             )
+            num_steps = st.slider("Optimization Steps", 50, 500, 200, 50)
         
         if file_style:
             # Load and display original image
@@ -554,44 +565,62 @@ if __name__ == "__main__":
             with col1:
                 st.subheader("Original Style Image")
                 st.image(original_image, use_container_width=True)
-            
-            # Apply protection
-            with st.spinner("Applying protection..."):
-                    protected_image = protector.protect_style_image(
-                        style_image=original_image,
-                        num_steps=200,
-                        strength=0.8,
-                        progress_callback=lambda p, msg: st.progress(p, text=msg))
-    
-                    # Add explanation text
-                    st.markdown("""
-                    ### How the Protection Works
-                    
-                    The protected image contains imperceptible perturbations that will disrupt style transfer algorithms when 
-                    someone attempts to copy your style. To humans, the images look nearly identical, but neural networks will
-                    struggle to extract the style features correctly.
-                    """)
-                    
-                    # Provide download option for protected image
-                    buf = io.BytesIO()
-                    protected_image.save(buf, format="PNG")
-                    byte_im = buf.getvalue()
-                    
-                    st.download_button(
-                        label="Download Protected Image",
-                        data=byte_im,
-                        file_name="protected_style_image.png",
-                        mime="image/png"
-                    )
-                    
-                # except Exception as e:
-                #     st.error(f"Error applying protection: {str(e)}")
-        else:
-            st.info("Please upload a style image to continue")
+
+            if st.button("🔒 Apply Protection", type="primary"):
+                with st.spinner("Applying protection..."):
+                    try:
+                        protected_image = protector.protect_style_image(
+                            style_image=original_image,
+                            num_steps=num_steps,
+                            strength=protection_strength,
+                            progress_callback=lambda p, msg: st.progress(p, text=msg))
+                        
+                        analysis = analyze_protection(original_image, protected_image)
+
+                        # Render comparison view
+                        protection_comparison_view(
+                            original_image,
+                            protected_image,
+                            analysis['metrics']
+                        )
+                        
+                        # Add explanation
+                        st.markdown("""
+                        ### Protection Analysis Guide:
+                        - **Heatmap Colors**: 
+                        - 🔴 Red: High differences
+                        - 🔵 Blue: Low differences
+                        - **SSIM**: Values closer to 1 indicate more similarity
+                        - **PSNR**: Higher values indicate better quality preservation
+                        """)
+        
+                        # Add explanation text
+                        st.markdown("""
+                        ### How the Protection Works
+                        
+                        The protected image contains imperceptible perturbations that will disrupt style transfer algorithms when 
+                        someone attempts to copy your style. To humans, the images look nearly identical, but neural networks will
+                        struggle to extract the style features correctly.
+                        """)
+                        
+                        # Provide download option for protected image
+                        buf = io.BytesIO()
+                        protected_image.save(buf, format="PNG")
+                        byte_im = buf.getvalue()
+                        
+                        st.download_button(
+                            label="Download Protected Image",
+                            data=byte_im,
+                            file_name="protected_style_image.png",
+                            mime="image/png"
+                        )
+                        
+                    except Exception as e:
+                            st.error(f"Error applying protection: {str(e)}")
     
     elif app_mode == options[0]:  # About NST
         print_info_NST()
-    
+     
     elif app_mode == "About Text-to-Image":  # About Text-to-Image
         print_info_txt2img()
         
