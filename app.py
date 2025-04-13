@@ -49,7 +49,7 @@ def get_style_protector():
 
 @st.cache_data
 def prepare_imgs(content_im, style_im, RGB=False):
-    """ Return scaled RGB images as numpy array of type np.uint8 """ 
+   
     if content_im is None or style_im is None:
         st.error("One or both input images are invalid")
         return None, None   
@@ -73,7 +73,7 @@ def prepare_imgs(content_im, style_im, RGB=False):
     return content_im, style_im
 
 def initialize_text2img_generator():
-    """Initialize the Text-to-Image generator with API keys"""
+    
     try:
         # Try to get API key from environment variables first
         api_key_stability = os.getenv('STABILITY_API_KEY')
