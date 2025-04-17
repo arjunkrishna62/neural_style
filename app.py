@@ -360,7 +360,7 @@ def get_size_options(model_option):
 if __name__ == "__main__":
     
     
-    st.title('Optmized NST')
+    st.title('PRESERVING THE CANVAS: ADVERSARIAL PROTECTION FOR NST')
     
     
     st.sidebar.title('Configuration')
