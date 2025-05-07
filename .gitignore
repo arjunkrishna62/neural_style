@@ -53,3 +53,7 @@ coverage.xml
 data/output-images/
 checkpoints/
 models/ 
+
+venv/
+NewEnv/
+.env/
