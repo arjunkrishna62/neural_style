@@ -10,7 +10,8 @@ from torch.optim import LBFGS
 from torchvision import transforms
 from models.vgg import Vgg16, Vgg19
 
-# values from: https://pytorch.org/vision/stable/models.html
+
+
 IMAGENET_MEAN_255 = [255*a for a in [0.485, 0.456, 0.406]]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 IMAGENET_STD_NEUTRAL = [1, 1, 1]
@@ -29,7 +30,7 @@ def prepare_imgs(content_img_path, style_img_path):
     content_im = cv2.imread(content_img_path)
     style_im = cv2.imread(style_img_path)
     
-    # check sizes in order to avoid huge computation times:
+    # check sizes in order to avoid huge computation times
     h,w,c = content_im.shape
     ratio = 1.
     if h > 512:
@@ -39,13 +40,13 @@ def prepare_imgs(content_img_path, style_img_path):
     content_im = cv2.resize(content_im, dsize=None, fx=ratio, fy=ratio,
                             interpolation=cv2.INTER_CUBIC)        
     # reshape style_im to match the content_im shape 
-    # (method followed in Gatys et al. paper):
+
     style_im = cv2.resize(style_im, content_im.shape[1::-1], cv2.INTER_CUBIC)
     
-    # show initial images:
+
     cv2.imshow('style', style_im)
     cv2.imshow('content', content_im)
-    # pass from BGR (OpenCV) to RGB:
+
     content_im = cv2.cvtColor(content_im, cv2.COLOR_BGR2RGB)
     style_im   = cv2.cvtColor(style_im, cv2.COLOR_BGR2RGB)    
     return content_im, style_im
@@ -53,7 +54,7 @@ def prepare_imgs(content_img_path, style_img_path):
 
 def gram_matrix(x, normalize=True):
     c, h, w = x.shape
-    # Get F^l (Gatys et. al notation) for every l:
+    # get F^l for every l:
     Fs = x.view(c,h*w)
     # Gram matrix:
     gram = Fs @ Fs.T
@@ -63,23 +64,22 @@ def gram_matrix(x, normalize=True):
 
 def build_loss(cfg, content_gt, style_gt, features, opt_im, criterion):
     
-    # CONTENT:
+
     if cfg['model'].lower()=='vgg19': 
         content_loss = criterion(content_gt, features[2].squeeze(0))
     else:
         content_loss = criterion(content_gt, features[0].squeeze(0))
     
-    # STYLE:
-    # obtain gram matrices for the predicted features:
+    # gram mterics
     current_style = [gram_matrix(ft_maps.squeeze(0)) for ft_maps in features]
-    # style loss:
+
     style_loss = 0.0
     for k, (gm, gm_gt) in enumerate(zip(current_style, style_gt)):
         if k != 4:
             style_loss += criterion(gm,gm_gt)
     style_loss /= len(current_style)
     
-    # TOTAL VRARIATION LOSS:
+
     tv_loss = torch.sum(torch.abs(opt_im[:, :, :-1] - opt_im[:, :, 1:])) + \
               torch.sum(torch.abs(opt_im[:, :-1, :] - opt_im[:, 1:, :]))
         
@@ -98,7 +98,7 @@ def unNormalize(tensor, mean=IMAGENET_MEAN_255, std=IMAGENET_STD):
 def tensor2img(x):
     """ Get unnormalized image and convert to numpy (in order to use OpenCV)
     """
-    # get unnormalize image and convert to numpy (in order to use OpenCV):
+    # get unnormalize image and convert to numpy (in order to use OpenCV
     x_un = unNormalize(x)
     #x_un    = x.mul(torch.tensor(IMAGENET_STD)).add(torch.tensor(IMAGENET_MEAN_255))
     x_numpy = x_un.cpu().numpy()
