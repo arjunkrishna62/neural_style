@@ -33,8 +33,6 @@ from protection.protection_views import protection_comparison_view
 
 from using_cnn import StyleTransferCNN
 
-from model_comparison import ModelComparer, display_comparison_view
-
 load_dotenv()
 
 @st.cache_resource
@@ -178,6 +176,37 @@ def display_generated_images(images, container):
                 filename = f"txt2img_generated_{timestamp}_{i+1}.png"
                 pil_image.save(filename)
                 st.success(f"Image saved as {filename}")
+                
+def preprocess_for_protection(image_pil, target_size=None):
+    """
+    Prepare an image for the style protection model.
+    
+    Args:
+        image_pil (PIL.Image): The input PIL image
+        target_size (tuple, optional): Target size as (width, height). If None, will use powers of 2
+        
+    Returns:
+        PIL.Image: Processed image ready for the protection model
+    """
+    # Convert to RGB to ensure consistent format
+    if image_pil.mode != 'RGB':
+        image_pil = image_pil.convert('RGB')
+    
+    # If no target size specified, make dimensions divisible by 8
+    # This is commonly required for neural network models
+    if target_size is None:
+        w, h = image_pil.size
+        # Make dimensions divisible by 8
+        new_w = (w // 8) * 8
+        new_h = (h // 8) * 8
+        target_size = (new_w, new_h)
+    
+    # Resize image if needed
+    if image_pil.size != target_size:
+        image_pil = image_pil.resize(target_size, Image.LANCZOS)
+    
+    return image_pil
+
 
 
 def print_info_NST():
@@ -368,7 +397,7 @@ if __name__ == "__main__":
     st.sidebar.title('Configuration')
     with st.sidebar:
         with st.expander("⚙️ Settings", expanded=True):
-            options = ['About NST', 'Try NST','About Style Protection','Style Protection Demo', 'About Text-to-Image', 'Generate from prompt', 'Model Comparison']
+            options = ['About NST', 'Try NST','About Style Protection','Style Protection Demo', 'About Text-to-Image', 'Generate from prompt']
             app_mode = st.selectbox('Mode:', options)
             st.info(f"Selected: {app_mode}")
    
@@ -721,79 +750,3 @@ if __name__ == "__main__":
                         
                 except Exception as e:
                     st.error(f"Generation failed: {str(e)}")
-    elif app_mode == "Model Comparison":
-        st.markdown("## Neural Style Transfer Model Comparison")
-        
-        st.markdown("""
-        This tool compares different neural style transfer models to help you understand their strengths and weaknesses.
-        Upload content and style images to see how each model performs.
-        """)
-        
-        # Create file uploaders for content and style images
-        col1, col2 = st.columns(2)
-        im_types = ["png", "jpg", "jpeg"]
-        
-        with col1:
-            file_c = st.file_uploader("Choose CONTENT Image", 
-                                    type=im_types,
-                                    key="comparison_content_uploader")
-            imc_ph = st.empty()            
-        with col2: 
-            file_s = st.file_uploader("Choose STYLE Image", 
-                                    type=im_types,
-                                    key="comparison_style_uploader")
-            ims_ph = st.empty()
-        
-        # Settings
-        iterations = st.slider("Number of Iterations", 5, 50, 20, 
-                            help="Higher values give better results but take longer")
-        
-        # Check if both images have been uploaded
-        if all([file_s, file_c]):
-            # Preprocess images
-            im_c = np.array(Image.open(file_c))
-            im_s = np.array(Image.open(file_s))
-            im_c, im_s = prepare_imgs(im_c, im_s, RGB=True)
-            
-            # Show images
-            imc_ph.image(im_c, use_container_width=True, caption="Content Image")
-            ims_ph.image(im_s, use_container_width=True, caption="Style Image")
-            
-            # Add a button to start comparison
-            start_comparison = st.button("Compare Models", type="primary")
-            
-            if start_comparison:
-                with st.spinner("Comparing models... This may take a few minutes."):
-                    # Initialize model comparer
-                    comparer = ModelComparer()
-                    
-                    # Progress bar
-                    progress_bar = st.progress(0)
-                    progress_text = st.empty()
-                    
-                    def update_progress(progress, text):
-                        progress_bar.progress(progress)
-                        progress_text.text(text)
-                    
-                    # Run comparison
-                    comparison_results = comparer.compare_models(
-                        im_c, im_s, 
-                        iterations=iterations,
-                        progress_callback=update_progress
-                    )
-                    
-                    # Clear progress indicators
-                    progress_bar.empty()
-                    progress_text.empty()
-                    
-                    # Display results
-                    display_comparison_view(im_c, im_s, comparison_results)
-        else:
-            st.info("Please upload both content and style images to start the comparison.")
-            
-            # Optionally show example images
-            st.markdown("### Example Results")
-            
-            # You could add some pre-computed comparison examples here
-            st.image("https://via.placeholder.com/800x300?text=Example+Comparison+Results", 
-                    caption="Example of model comparison results", use_column_width=True)
